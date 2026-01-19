@@ -6,6 +6,11 @@ const isAdmin = require('../lib/isAdmin');
 
 const STATE_PATH = path.join(__dirname, '..', 'data', 'chatbot.json');
 
+// ──── Add these requires for voice conversion ────
+const ffmpeg = require('fluent-ffmpeg');
+const ffmpegInstaller = require('@ffmpeg-installer/ffmpeg');
+ffmpeg.setFfmpegPath(ffmpegInstaller.path);
+
 function loadState() {
   try {
     if (!fs.existsSync(STATE_PATH)) return { perGroup: {}, private: false };
@@ -73,7 +78,7 @@ function extractMessageText(message) {
 // ────────────────────────────────────────────────
 //          VOICE SETTINGS - customize here
 // ────────────────────────────────────────────────
-const DEFAULT_VOICE_MODEL = "ana";           // Change to: nahida, nami, taylor_swift, goku, etc.
+const DEFAULT_VOICE_MODEL = "ana";  // Try others if "ana" fails: "nova", "echo", "shimmer", "en_female", etc.
 // const MIN_TEXT_FOR_VOICE = 8;
 // const MAX_TEXT_FOR_VOICE = 1200;
 
@@ -96,7 +101,7 @@ async function handleChatbotMessage(sock, chatId, message) {
       await new Promise(r => setTimeout(r, 700 + Math.random() * 900));
     } catch {}
 
-    // ──── Get AI response ────
+    // ──── Get AI text response ────
     const encoded = encodeURIComponent(userText);
     const apiUrl = `https://api.yupra.my.id/api/ai/gpt5?text=${encoded}`;
 
@@ -136,43 +141,76 @@ async function handleChatbotMessage(sock, chatId, message) {
 
     const replyText = String(apiResult).trim();
 
-    // ──── 1. Always send the TEXT message first ────
-    const textMsg = await sock.sendMessage(chatId, { 
-      text: replyText 
-    }, { quoted: message });
+    // ──── Try to send VOICE NOTE as primary reply ────
+    let voiceSent = false;
 
-    // ──── 2. Then try to send VOICE NOTE ────
     try {
-      // Optional length filter - adjust as you like
+      // Skip very short/long texts (adjust as needed)
       if (replyText.length < 10 || replyText.length > 1100) {
         console.log("[Voice] Skipped - text too short/long");
-        return;
+        throw new Error("Length skip");
       }
 
       const voiceApiUrl = `https://api.agatz.xyz/api/voiceover?text=\( {encodeURIComponent(replyText)}&model= \){DEFAULT_VOICE_MODEL}`;
 
-      const response = await axios.get(voiceApiUrl, {
-        timeout: 35000
+      const response = await axios.get(voiceApiUrl, { timeout: 35000 });
+
+      if (response.data?.status !== 200 || !response.data?.data?.oss_url) {
+        console.log("[Voice API] Invalid response:", response.data);
+        throw new Error("No valid audio URL");
+      }
+
+      const audioUrl = response.data.data.oss_url;
+      console.log(`[Voice] Audio URL: ${audioUrl}`);
+
+      // Download the audio (likely MP3)
+      const audioRes = await axios.get(audioUrl, { responseType: 'arraybuffer', timeout: 25000 });
+      const inputBuffer = Buffer.from(audioRes.data);
+
+      // Convert MP3 → Opus/OGG (WhatsApp voice note requirement)
+      const outputBuffer = await new Promise((resolve, reject) => {
+        const chunks = [];
+        ffmpeg()
+          .input(inputBuffer)
+          .inputFormat('mp3')
+          .noVideo()
+          .audioCodec('libopus')
+          .format('ogg')
+          .audioBitrate(24)
+          .audioChannels(1)
+          .audioFrequency(48000)
+          .on('error', (err) => reject(err))
+          .on('end', () => resolve(Buffer.concat(chunks)))
+          .pipe()
+          .on('data', chunk => chunks.push(chunk));
       });
 
-      if (response.data?.status === 200 && response.data?.data?.oss_url) {
-        const audioUrl = response.data.data.oss_url;
+      // Simple dummy waveform (optional but improves appearance)
+      const waveform = new Uint8Array(100).map(() => Math.floor(Math.random() * 100 + 50));
 
-        await sock.sendMessage(chatId, {
-          audio: { url: audioUrl },
-          mimetype: 'audio/mpeg',
-          ptt: true,                    // voice note (ptt = push-to-talk style)
-          fileName: 'AI Voice Reply.mp3',
-          // Optional: seconds, waveform, etc. (Baileys can auto-detect duration)
-        }, { quoted: textMsg });       // quote the text message → voice appears as reply to text
+      // Send voice note (this is now the main reply)
+      await sock.sendMessage(chatId, {
+        audio: outputBuffer,
+        mimetype: 'audio/ogg; codecs=opus',
+        ptt: true,
+        fileName: 'AI-voice-reply.ogg',
+        seconds: Math.round(replyText.length / 12), // rough estimate (avg speaking rate)
+        waveform: waveform,
+      }, { quoted: message });
 
-        console.log(`[Voice] Sent voice note (${replyText.length} chars) using ${DEFAULT_VOICE_MODEL}`);
-      } else {
-        console.log("[Voice] API returned non-200 or no url");
-      }
+      voiceSent = true;
+      console.log(`[Voice] Sent successfully (${replyText.length} chars) with model ${DEFAULT_VOICE_MODEL}`);
+
     } catch (voiceErr) {
-      console.error("[Voice generation failed]", voiceErr.message || voiceErr);
-      // No fallback needed - text was already sent
+      console.error("[Voice generation/conversion failed]", voiceErr.message || voiceErr);
+    }
+
+    // Fallback: send text only if voice completely failed
+    if (!voiceSent) {
+      await sock.sendMessage(chatId, { 
+        text: replyText + "\n\n*(Voice note generation failed – showing text instead)*" 
+      }, { quoted: message });
+      console.log("[Fallback] Sent text reply");
     }
 
   } catch (err) {
