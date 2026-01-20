@@ -21,7 +21,11 @@
   ],
   "author": "",
   "license": "ISC",
-  "dependencies": {
+ "dependencies": {
+   "fluent-ffmpeg": "^2.1.2",
+   "@ffmpeg-installer/ffmpeg": "^1.1.0",
+   "node-fetch": "^2.6.1"
+
     "@adiwajshing/keyed-db": "^0.2.4",
     "@ffmpeg/ffmpeg": "^0.12.15",
     "@hapi/boom": "^10.0.1",
