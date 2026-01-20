@@ -3,7 +3,7 @@ const settings = require('../settings');
 const axios = require('axios');
 
 // ────────────────────────────────────────────────
-const PRICE_PER_GB = 1000; 
+const PRICE_PER_GB = 1000; // Fixed Cost per 1GB
 const MIN_GB = 10;
 const SELLER_NUMBER = '255615944741';
 const SELLER_JID = `${SELLER_NUMBER}@s.whatsapp.net`;
@@ -14,14 +14,8 @@ const CONFIRMATION_AUDIO = 'https://files.catbox.moe/t80fnj.mp3';
 
 // ────────────────────────────────────────────────
 
-let orderCounter = 1000;
-
 function formatNumber(n) {
     return n.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-}
-
-function generateOrderRef() {
-    return `HTL-${Math.floor(1000 + Math.random() * 9000)}`;
 }
 
 async function halotelCommand(sock, chatId, message, userMessage = '') {
@@ -36,33 +30,59 @@ async function halotelCommand(sock, chatId, message, userMessage = '') {
         const args = text.split(/\s+/).slice(1);
 
         if (args.length === 0) {
-            const menu = `🚀 *HALOTEL DATA SHOP*\n\n*Rate:* TSh ${formatNumber(PRICE_PER_GB)} / GB\n*Min:* ${MIN_GB} GB\n\n*Format:* .halotel <GB> <Number>\n*Example:* .halotel 20 255612130873`;
+            const menu = `🚀 *HALOTEL DATA SHOP*
+
+*Rate:* TSh ${formatNumber(PRICE_PER_GB)} per 1GB
+*Minimum:* ${MIN_GB} GB
+
+*Format:* .halotel <GB> <Number>
+*Example:* .halotel 20 255612130873`;
+
             return await sock.sendMessage(chatId, { text: menu }, { quoted: message });
         }
 
-        // --- IMPROVED CALCULATION LOGIC ---
-        // Find the first number in args that is >= MIN_GB and treat as GB
-        let gbInput = args.find(a => !isNaN(parseFloat(a)) && parseFloat(a) >= MIN_GB);
-        let gbAmount = gbInput ? parseFloat(gbInput) : null;
+        // --- FIXED CALCULATION LOGIC ---
+        // Clean numbers: remove any text or '+' from input
+        let cleanArgs = args.map(a => a.replace(/[^0-9.]/g, ''));
         
-        // Find a phone-like number (9 to 13 digits)
-        let phoneNumber = args.find(a => a.replace(/[^0-9]/g, '').length >= 9 && a.replace(/[^0-9]/g, '').length <= 13);
+        // Find GB (The first number that is >= MIN_GB)
+        let gbAmount = parseFloat(cleanArgs.find(a => parseFloat(a) >= MIN_GB));
+        
+        // Find Phone (The number that looks like a phone number)
+        let phoneNumber = cleanArgs.find(a => a.length >= 9 && a.length <= 13);
 
-        if (!gbAmount || !phoneNumber) {
-            return await sock.sendMessage(chatId, { text: '💡 *Usage:* .halotel <GB> <Number>\nExample: `.halotel 12 255615000000`' });
+        if (!gbAmount || isNaN(gbAmount)) {
+            return await sock.sendMessage(chatId, { text: `❌ Kindly specify an amount of *at least ${MIN_GB} GB*.` });
+        }
+        if (!phoneNumber) {
+            return await sock.sendMessage(chatId, { text: `❌ Please provide a valid *recipient phone number*.` });
         }
 
-        // Precise math calculation
-        const totalPrice = Math.floor(gbAmount * PRICE_PER_GB);
-        const orderRef = generateOrderRef();
+        // Calculate Total Cost
+        const totalCost = gbAmount * PRICE_PER_GB;
+        const orderRef = `HTL-${Math.floor(1000 + Math.random() * 9000)}`;
 
-        const orderInfo = `✨ *ORDER SUMMARY*\n━━━━━━━━━━━━━━━━━━\n📦 *Bundle:* ${gbAmount} GB\n📱 *Number:* ${phoneNumber}\n💰 *Amount:* TSh ${formatNumber(totalPrice)}\n🆔 *Ref:* ${orderRef}\n━━━━━━━━━━━━━━━━━━\n\n*Payment Details:*\nAccount: ${SELLER_NAME}\nNumber: ${SELLER_NUMBER}\n\n_Kindly pay then click confirm below:_`;
+        // --- CLEANER DISPLAY ---
+        const orderInfo = `✨ *ORDER CONFIRMED*
+
+📦 *Bundle:* ${gbAmount} GB
+💰 *Rate:* TSh ${formatNumber(PRICE_PER_GB)} / 1GB
+💵 *Total Cost:* TSh ${formatNumber(totalCost)}
+📱 *Recipient:* ${phoneNumber}
+🆔 *Ref:* ${orderRef}
+
+━━━━━━━━━━━━━━━━━━
+*Payment to:*
+Name: ${SELLER_NAME}
+Number: ${SELLER_NUMBER}
+
+_Pay then click confirm below:_`;
 
         const buttons = [
             {
                 urlButton: {
                     displayText: '💳 Confirm Payment',
-                    url: `https://wa.me/${SELLER_NUMBER}?text=Paid+Ref:${orderRef}+${gbAmount}GB+for+${phoneNumber}`
+                    url: `https://wa.me/${SELLER_NUMBER}?text=Paid+${orderRef}+for+${gbAmount}GB`
                 }
             }
         ];
@@ -70,11 +90,11 @@ async function halotelCommand(sock, chatId, message, userMessage = '') {
         let banner = null;
         try { banner = await getBuffer(AD_BANNER_2); } catch (e) {}
 
-        await sendButtons(sock, chatId, orderInfo, 'Mickey Glitch Technology', buttons, message, {
+        await sendButtons(sock, chatId, orderInfo, 'Fast & Secure Delivery', buttons, message, {
             contextInfo: {
                 externalAdReply: {
-                    title: `Halotel Payment: TSh ${formatNumber(totalPrice)}`,
-                    body: `Order ID: ${orderRef}`,
+                    title: `Total: TSh ${formatNumber(totalCost)}`,
+                    body: `Buying ${gbAmount} GB for ${phoneNumber}`,
                     thumbnail: banner,
                     mediaType: 1,
                     renderLargerThumbnail: true
@@ -82,31 +102,25 @@ async function halotelCommand(sock, chatId, message, userMessage = '') {
             }
         });
 
-        // --- FIXED AUDIO PLAYBACK LOGIC ---
+        // --- FIXED AUDIO PLAYBACK ---
         setTimeout(async () => {
             try {
-                // Fetching as arraybuffer is the most stable way for Baileys
-                const resp = await axios.get(CONFIRMATION_AUDIO, { responseType: 'arraybuffer' });
-                const buffer = Buffer.from(resp.data);
-
+                const response = await axios.get(CONFIRMATION_AUDIO, { responseType: 'arraybuffer' });
                 await sock.sendMessage(chatId, {
-                    audio: buffer,
-                    // 'audio/ogg; codecs=opus' is the universal standard for WhatsApp voice notes
-                    mimetype: 'audio/ogg; codecs=opus', 
-                    ptt: true // Sends as a blue-microphone voice note
+                    audio: Buffer.from(response.data),
+                    mimetype: 'audio/ogg; codecs=opus', // Native WhatsApp Format
+                    ptt: true 
                 }, { quoted: message });
-            } catch (e) {
-                console.log('Audio Error:', e.message);
-            }
+            } catch (e) {}
         }, 1500);
 
         // Notify Seller
         await sock.sendMessage(SELLER_JID, {
-            text: `🔔 *New Order:* ${orderRef}\n📦 ${gbAmount}GB\n📱 ${phoneNumber}\n💰 TSh ${formatNumber(totalPrice)}`
+            text: `🔔 *New Order:* ${orderRef}\n📦 ${gbAmount}GB @ TSh ${PRICE_PER_GB}\n💰 Total: TSh ${formatNumber(totalCost)}\n📱 To: ${phoneNumber}`
         });
 
     } catch (error) {
-        await sock.sendMessage(chatId, { text: '🔄 Just a moment, let\'s try that again!' });
+        await sock.sendMessage(chatId, { text: '🔄 Something went wrong. Let\'s try that again!' });
     }
 }
 
