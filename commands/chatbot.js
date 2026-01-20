@@ -1,13 +1,55 @@
 const fs = require('fs');
-const path = require('fs');
-const os = require('os'); // Added for temp files
-const { exec } = require('child_process'); // For faster conversion if needed
+const path = require('path');
 const fetch = require('node-fetch');
-const axios = require('axios');
 const isAdmin = require('../lib/isAdmin');
 
-// ... (loadState and saveState stay the same) ...
+const STATE_PATH = path.join(__dirname, '..', 'data', 'chatbot.json');
 
+// --- State Management ---
+function loadState() {
+  try {
+    if (!fs.existsSync(STATE_PATH)) return { perGroup: {}, private: false };
+    const raw = fs.readFileSync(STATE_PATH, 'utf8');
+    const state = JSON.parse(raw || '{}');
+    if (!state.perGroup) state.perGroup = {};
+    return state;
+  } catch (e) {
+    return { perGroup: {}, private: false };
+  }
+}
+
+function saveState(state) {
+  try {
+    const dataDir = path.dirname(STATE_PATH);
+    if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
+    fs.writeFileSync(STATE_PATH, JSON.stringify(state, null, 2), 'utf8');
+  } catch (e) {
+    console.error('Failed to save chatbot state:', e);
+  }
+}
+
+async function isEnabledForChat(state, chatId) {
+  if (!state || !chatId) return false;
+  if (chatId.endsWith('@g.us')) {
+    return !!state.perGroup?.[chatId]?.enabled;
+  }
+  return !!state.private;
+}
+
+function extractMessageText(message) {
+  if (!message?.message) return '';
+  const msg = message.message;
+  return (
+    msg.conversation ||
+    msg.extendedTextMessage?.text ||
+    msg.imageMessage?.caption ||
+    msg.videoMessage?.caption ||
+    msg.interactiveMessage?.body?.text ||
+    ''
+  ).trim();
+}
+
+// --- Main Chatbot Logic ---
 async function handleChatbotMessage(sock, chatId, message) {
   try {
     if (!chatId || message.key?.fromMe) return;
@@ -18,71 +60,65 @@ async function handleChatbotMessage(sock, chatId, message) {
     const userText = extractMessageText(message);
     if (!userText) return;
 
-    // 1. Show typing status immediately
+    // Show typing status
     await sock.sendPresenceUpdate('composing', chatId);
 
-    // 2. Fetch AI text response
+    // Get AI response
     const apiUrl = `https://api.yupra.my.id/api/ai/gpt5?text=${encodeURIComponent(userText)}`;
     const res = await fetch(apiUrl, { signal: AbortSignal.timeout(15000) });
     const data = await res.json();
-    
-    const replyText = data?.response || data?.message || data?.result || data?.answer || data?.text || "I'm not sure how to respond to that.";
 
-    // 3. SEND TEXT IMMEDIATELY (Reduces perceived delay)
-    const sentMsg = await sock.sendMessage(chatId, { text: replyText }, { quoted: message });
+    const replyText = data?.response || data?.message || data?.result || "I couldn't process that.";
 
-    // 4. GENERATE AUDIO IN BACKGROUND
-    // We don't "await" this whole block if we want it to be super fast, 
-    // but here we keep it inside the try-catch to handle the voice logic.
-    generateAndSendVoice(sock, chatId, replyText, sentMsg);
+    // Send text reply only
+    await sock.sendMessage(chatId, { text: replyText }, { quoted: message });
 
   } catch (err) {
-    console.error('Chatbot general error:', err);
+    console.error('[Chatbot Error]:', err.message);
   }
 }
 
-/**
- * Separated function to handle voice so it doesn't block the text flow
- */
-async function generateAndSendVoice(sock, chatId, text, quotedMsg) {
-  const tempMp3 = path.join(os.tmpdir(), `voice_${Date.now()}.mp3`);
-  const tempOgg = path.join(os.tmpdir(), `voice_${Date.now()}.opus`);
-
+// --- Toggle Command ---
+async function groupChatbotToggleCommand(sock, chatId, message, args) {
   try {
-    // Limits to prevent API crashes
-    if (text.length < 2 || text.length > 1000) return;
+    const argStr = (args || '').trim().toLowerCase();
+    const state = loadState();
 
-    const voiceApiUrl = `https://api.agatz.xyz/api/voiceover?text=${encodeURIComponent(text)}&model=ana`;
-    const response = await axios.get(voiceApiUrl, { timeout: 20000 });
+    // Handle Private Chatbot Toggle
+    if (argStr.startsWith('private')) {
+      const sub = argStr.split(/\s+/)[1];
+      if (sub === 'on') state.private = true;
+      else if (sub === 'off') state.private = false;
+      else return sock.sendMessage(chatId, { text: 'Usage: .chatbot private on|off' });
 
-    if (!response.data?.data?.oss_url) return;
-    const audioUrl = response.data.data.oss_url;
+      saveState(state);
+      return sock.sendMessage(chatId, { text: `Private Chatbot: *${state.private ? 'ON' : 'OFF'}*` });
+    }
 
-    // Download audio
-    const audioRes = await axios.get(audioUrl, { responseType: 'arraybuffer' });
-    fs.writeFileSync(tempMp3, Buffer.from(audioRes.data));
+    // Handle Group Chatbot Toggle
+    if (!chatId.endsWith('@g.us')) return sock.sendMessage(chatId, { text: 'Use this in a group.' });
 
-    // Fast Conversion using FFmpeg Command Line (usually faster than fluent-ffmpeg streams)
-    const ffmpegPath = require('@ffmpeg-installer/ffmpeg').path;
-    const { execSync } = require('child_process');
-    
-    // Convert to WhatsApp-ready OGG/Opus
-    execSync(`"${ffmpegPath}" -i "${tempMp3}" -c:a libopus -ac 1 -ar 48000 -b:a 24k -application voip "${tempOgg}" -y`);
+    const sender = message.key.participant || message.key.remoteJid;
+    const adminInfo = await isAdmin(sock, chatId, sender);
+    if (!adminInfo.isSenderAdmin && !message.key.fromMe) {
+      return sock.sendMessage(chatId, { text: 'Admins only.' });
+    }
 
-    const audioBuffer = fs.readFileSync(tempOgg);
+    if (argStr === 'on') state.perGroup[chatId] = { enabled: true };
+    else if (argStr === 'off') state.perGroup[chatId] = { enabled: false };
+    else return sock.sendMessage(chatId, { text: 'Usage: .chatbot on|off' });
 
-    // Send the audio as a reply to the AI text message
-    await sock.sendMessage(chatId, {
-      audio: audioBuffer,
-      mimetype: 'audio/ogg; codecs=opus',
-      ptt: true
-    }, { quoted: quotedMsg });
+    saveState(state);
+    return sock.sendMessage(chatId, { text: `Group Chatbot: *${state.perGroup[chatId].enabled ? 'ON' : 'OFF'}*` });
 
-  } catch (err) {
-    console.error("[Voice Background Error]", err.message);
-  } finally {
-    // Cleanup files
-    if (fs.existsSync(tempMp3)) fs.unlinkSync(tempMp3);
-    if (fs.existsSync(tempOgg)) fs.unlinkSync(tempOgg);
+  } catch (e) {
+    console.error('[Toggle Error]:', e);
+    sock.sendMessage(chatId, { text: 'Command failed.' });
   }
 }
+
+// Ensure these are exported correctly
+module.exports = {
+  handleChatbotMessage,
+  groupChatbotToggleCommand
+};
