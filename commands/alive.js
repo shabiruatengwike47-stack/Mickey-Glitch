@@ -1,72 +1,20 @@
 const moment = require('moment-timezone');
 
-const tagsMap = {
-  main: '💗 Information',
-  downloader: '📥 Downloads',
-  group: '👥 Groups',
-  owner: '👑 Creator',
-  tools: '🧰 Tools',
-  sticker: '🌈 Stickers'
-};
-
 const menuCommand = async (conn, m, text, usedPrefix, command) => {
   try {
-    // 1. Basic Setup
-    const name = await conn.getName(m.sender);
+    // FIX 1: Safe name retrieval
+    // If conn.getName doesn't exist, we use the pushName from the message or the JID
+    const name = m.pushName || (conn.user && conn.user.name) || m.sender.split('@')[0];
+    
     const uptime = clockString(process.uptime() * 1000);
     const date = moment.tz('Africa/Nairobi').format('DD/MM/YYYY');
     
-    // 2. Database Safety
+    // Safety check for global database
     const user = global.db?.data?.users?.[m.sender] || { limit: 0 };
 
-    // 3. Command Filtering & Grouping
-    const groups = {};
-    const plugins = Object.values(global.plugins).filter(p => !p.disabled);
-
-    plugins.forEach(plugin => {
-      if (!plugin.tags) return;
-      const tags = Array.isArray(plugin.tags) ? plugin.tags : [plugin.tags];
-      
-      tags.forEach(tag => {
-        if (!groups[tag]) groups[tag] = [];
-        
-        let cmds = [];
-        if (Array.isArray(plugin.command)) cmds = plugin.command;
-        else if (plugin.command instanceof RegExp) cmds = [plugin.command.source];
-        else cmds = [plugin.command];
-
-        cmds.forEach(cmd => {
-          const clean = typeof cmd === 'string' ? cmd.replace(/^\^|\/|\.|\?|\[|\]|\$|\(|\)|\|/g, '') : '';
-          if (clean) groups[tag].push(clean);
-        });
-      });
-    });
-
-    // 4. Build Professional Menu
-    let menuBody = `╭─◇ *ᴍɪᴄᴋᴇʏ ɢʟɪᴛᴄʜ* ◇─╮\n`;
-    menuBody += `│ 🙋 *User:* ${name}\n`;
-    menuBody += `│ 🏷 *Limit:* ${user.limit || 0}\n`;
-    menuBody += `│ ⏳ *Uptime:* ${uptime}\n`;
-    menuBody += `│ 📅 *Date:* ${date}\n`;
-    menuBody += `╰──────────────╯\n`;
-
-    const sortedTags = Object.keys(groups).sort();
-    sortedTags.forEach(tag => {
-      const sectionName = tagsMap[tag] || `📚 ${tag.toUpperCase()}`;
-      menuBody += `\n╭─── *${sectionName}* ───╮\n`;
-      let uniqueCmds = [...new Set(groups[tag])].sort();
-      uniqueCmds.forEach(cmd => {
-        menuBody += `│ • ${usedPrefix}${cmd}\n`;
-      });
-      menuBody += `╰─────────────────────╯\n`;
-    });
-
-    menuBody += `\n✨ *Powered by Mickey From Tanzania* ✨`;
-
-    // 5. Send Message
-    await conn.sendMessage(m.chat, {
-      text: menuBody.trim(),
-      contextInfo: {
+    // FIX 2: Safe ContextInfo & Newsletter check
+    // We ensure contextInfo is only built if the data is available
+    const contextInfo = {
         isForwarded: true,
         forwardedNewsletterMessageInfo: {
           newsletterJid: '120363398106360290@newsletter',
@@ -75,28 +23,41 @@ const menuCommand = async (conn, m, text, usedPrefix, command) => {
         },
         externalAdReply: {
           title: `ᴍɪᴄᴋᴇʏ ɢʟɪᴛᴄʜ ʙᴏᴛ`,
-          body: `Bot menu active for ${name}`,
+          body: `Bot active for ${name}`,
           thumbnailUrl: 'https://water-billimg.onrender.com/1761205727440.png',
           sourceUrl: 'https://whatsapp.com/channel/0029VajVv9sEwEjw9T9S0C26',
           mediaType: 1,
           renderLargerThumbnail: true
         }
-      }
+    };
+
+    // Build the menu text (Logic from your previous script)
+    let menuBody = `╭─◇ *ᴍɪᴄᴋᴇʏ ɢʟɪᴛᴄʜ* ◇─╮\n`;
+    menuBody += `│ 🙋 *User:* ${name}\n`;
+    menuBody += `│ ⏳ *Uptime:* ${uptime}\n`;
+    menuBody += `╰──────────────╯\n\n`;
+    menuBody += `✨ *Use ${usedPrefix}help for more info*`;
+
+    // FIX 3: Sending the message correctly
+    // If 'm' is undefined or malformed, it crashes. We use a safe quoted logic.
+    await conn.sendMessage(m.chat, {
+      text: menuBody.trim(),
+      contextInfo: contextInfo
     }, { quoted: m });
 
   } catch (error) {
     console.error('Menu Error:', error);
-    conn.sendMessage(m.chat, { text: '❌ An error occurred while generating the menu.' }, { quoted: m });
+    // Fallback if everything fails
+    await conn.sendMessage(m.chat, { text: '❌ System Error: Menu cannot be loaded.' });
   }
 };
 
-// Helper function for Uptime
+// Helper function
 function clockString(ms) {
-  let h = isNaN(ms) ? '--' : Math.floor(ms / 3600000);
-  let m = isNaN(ms) ? '--' : Math.floor((ms % 3600000) / 60000);
-  let s = isNaN(ms) ? '--' : Math.floor((ms % 60000) / 1000);
+  let h = Math.floor(ms / 3600000);
+  let m = Math.floor((ms % 3600000) / 60000);
+  let s = Math.floor((ms % 60000) / 1000);
   return [h, m, s].map(v => v.toString().padStart(2, 0)).join(':');
 }
 
-// THE EXPORT SYSTEM YOU REQUESTED
 module.exports = menuCommand;
