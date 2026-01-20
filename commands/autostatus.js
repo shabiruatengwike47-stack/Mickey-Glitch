@@ -76,6 +76,12 @@ async function reactToStatus(sock, key) {
     const cfg = await loadConfig();
     // Always react unless explicitly set to empty string
     if (!cfg.reactWith || cfg.reactWith.trim() === '') return;
+    
+    // Validate key structure
+    if (!key?.id || !key?.participant) {
+        console.debug('[React] Invalid key structure, skipping reaction');
+        return;
+    }
 
     const reaction = {
         key: {
@@ -90,10 +96,12 @@ async function reactToStatus(sock, key) {
 
     try {
         await sock.sendMessage('status@broadcast', { reactionMessage: reaction });
-    } catch {
+    } catch (err) {
         try {
             await sock.relayMessage('status@broadcast', { reactionMessage: reaction }, { messageId: key.id });
-        } catch {}
+        } catch (relayErr) {
+            console.debug(`[React FAIL] ${relayErr?.message || err?.message}`);
+        }
     }
 }
 
@@ -122,9 +130,13 @@ async function forwardStatus(sock, msg) {
     console.log(`[Status] ${phone} • ${msgType} • ${timeStr}`);
 
     // 1. Send info message first
-    await sock.sendMessage(TARGET_JID, {
-        text: `📸 Status from ${phone}`
-    }).catch(() => {});
+    try {
+        await sock.sendMessage(TARGET_JID, {
+            text: `📸 Status from ${phone}`
+        });
+    } catch (err) {
+        console.error(`[Info Send FAIL] ${err.message}`);
+    }
 
     // Small natural delay before media
     await new Promise(r => setTimeout(r, randomMs(600, 1200)));
@@ -148,15 +160,21 @@ async function forwardStatus(sock, msg) {
     };
 
     const handler = MEDIA_HANDLERS[msgType];
-    if (!handler) return;
+    if (!handler) {
+        console.debug(`[Unsupported] ${msgType} from ${phone}`);
+        return;
+    }
 
     try {
         const buffer = await downloadMediaMessage(msg, 'buffer', {}, {
             logger: console,
             reuploadRequest: sock.updateMediaMessage
+        }).catch(err => {
+            console.error(`[Download FAIL] ${msgType} • ${err.message}`);
+            return null;
         });
 
-        if (!buffer || buffer.length < 300) throw new Error('empty/corrupt media');
+        if (!buffer || buffer.length < 100) throw new Error('empty/corrupt media');
 
         const captionLines = [
             content.caption?.trim() ? `Caption: ${content.caption.trim()}` : '',
@@ -167,7 +185,7 @@ async function forwardStatus(sock, msg) {
             [handler.type]: buffer,
             mimetype: content.mimetype || handler.mime,
             caption: captionLines || undefined,
-            fileName: content.fileName || `status-\( {Date.now()}. \){handler.ext}`
+            fileName: content.fileName || `status-${Date.now()}.${handler.ext}`
         });
 
         console.log(`[Forward OK] ${handler.type} • ${phone}`);
@@ -202,6 +220,10 @@ async function handleStatusUpdate(sock, ev) {
     if (!msgKey?.remoteJid?.includes('status@broadcast') || !msgKey.id) return;
 
     if (processedStatusIds.has(msgKey.id)) return;
+    
+    // Mark as processing immediately to prevent race conditions
+    processedStatusIds.add(msgKey.id);
+    if (processedStatusIds.size > 800) processedStatusIds.clear();
 
     try {
         // Quick like/reaction
@@ -212,8 +234,10 @@ async function handleStatusUpdate(sock, ev) {
         await sock.readMessages([msgKey]).catch(() => {});
 
         // Forward with info first
-        await new Promise(r => setTimeout(r, randomMs(cfg.infoDelayMinMs, cfg.infoDelayMinMs + 600)));
-        if (msgToForward) await forwardStatus(sock, msgToForward);
+        if (msgToForward) {
+            await new Promise(r => setTimeout(r, randomMs(cfg.forwardDelayMinMs, cfg.forwardDelayMaxMs)));
+            await forwardStatus(sock, msgToForward);
+        }
 
     } catch (err) {
         console.error('[AutoStatus] error', err?.message || err);
