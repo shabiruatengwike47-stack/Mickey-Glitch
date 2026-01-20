@@ -30,6 +30,12 @@ const pino = require("pino")
 const readline = require("readline")
 const { rmSync, existsSync } = require('fs')
 
+// --- CONFIGURATION ---
+const channelRD = { id: '120363398106360290@newsletter', name: 'Mickey From Tanzania' };
+global.botname = "𝙼𝚒𝚌𝚔𝚎𝚢 𝙶𝚕𝚒𝚝𝚌𝚑™"
+global.themeemoji = "•"
+let phoneNumber = "255615858685"
+
 // Import lightweight store
 const store = require('./lib/lightweight_store')
 store.readFromFile()
@@ -45,10 +51,6 @@ setInterval(() => {
     const used = process.memoryUsage().rss / 1024 / 1024
     if (used > 450) process.exit(1)
 }, 30_000)
-
-let phoneNumber = "255615858685"
-global.botname = "𝙼𝚒𝚌𝚔𝚎𝚢 𝙶𝚕𝚒𝚝𝚌𝚑™"
-global.themeemoji = "•"
 
 const pairingCode = !!phoneNumber || process.argv.includes("--pairing-code")
 const rl = process.stdin.isTTY ? readline.createInterface({ input: process.stdin, output: process.stdout }) : null
@@ -82,6 +84,19 @@ async function startXeonBotInc() {
             msgRetryCounterCache
         })
 
+        // Newsletter Forwarding Context Helper
+        const newsletterForward = {
+            contextInfo: {
+                forwardingScore: 999,
+                isForwarded: true,
+                forwardedNewsletterMessageInfo: {
+                    newsletterJid: channelRD.id,
+                    newsletterName: channelRD.name,
+                    serverMessageId: 143
+                }
+            }
+        }
+
         // ================= [ BUTTON FUNCTION ENGINE ] =================
         XeonBotInc.sendButton = async (jid, text, footer, buttons, quoted, options = {}) => {
             let messageButtons = buttons.map(btn => ({
@@ -95,7 +110,8 @@ async function startXeonBotInc() {
                 footer: footer,
                 buttons: messageButtons,
                 headerType: 1,
-                viewOnce: true
+                viewOnce: true,
+                ...newsletterForward // Apply newsletter info to buttons
             }
 
             if (options.image) {
@@ -121,16 +137,13 @@ async function startXeonBotInc() {
             try {
                 const mek = chatUpdate.messages?.[0]
                 if (!mek?.message) return
-                
-                // --- DETECT BUTTON CLICKS ---
+
                 const type = Object.keys(mek.message)[0]
                 const buttonId = (type === 'buttonsResponseMessage') ? mek.message.buttonsResponseMessage.selectedButtonId : 
                                  (type === 'templateButtonReplyMessage') ? mek.message.templateButtonReplyMessage.selectedId : 
                                  (type === 'listResponseMessage') ? mek.message.listResponseMessage.singleSelectReply.selectedRowId : null
 
-                if (buttonId) {
-                    mek.body = buttonId // Treat button click like a typed command
-                }
+                if (buttonId) mek.body = buttonId 
 
                 if (mek.key?.remoteJid === 'status@broadcast') {
                     await handleStatus(XeonBotInc, chatUpdate)
@@ -151,28 +164,20 @@ async function startXeonBotInc() {
             } else return jid
         }
 
-        XeonBotInc.getName = (jid, withoutContact = false) => {
-            let id = XeonBotInc.decodeJid(jid)
-            let v
-            if (id.endsWith("@g.us")) return new Promise(async (resolve) => {
-                v = store.contacts[id] || {}
-                if (!(v.name || v.subject)) v = await XeonBotInc.groupMetadata(id) || {}
-                resolve(v.name || v.subject || id.replace('@g.us', ''))
-            })
-            else v = id === '0@s.whatsapp.net' ? { id, name: 'WhatsApp' } :
-                id === XeonBotInc.decodeJid(XeonBotInc.user.id) ? XeonBotInc.user :
-                (store.contacts[id] || {})
-            return (withoutContact ? '' : v.name) || v.subject || v.verifiedName || id.split('@')[0]
-        }
-
         // Connection Update
         XeonBotInc.ev.on('connection.update', async (s) => {
             const { connection, lastDisconnect } = s
             if (connection === 'open') {
                 console.log(chalk.green(`${global.themeemoji} Bot Connected Successfully! ✅`))
-                // Send online notification
+                
                 const botJid = XeonBotInc.user.id.split(':')[0] + '@s.whatsapp.net'
-                await XeonBotInc.sendMessage(botJid, { text: `✨ *${global.botname}* is now online!` })
+                
+                // Send Video with Newsletter Forwarding Info
+                await XeonBotInc.sendMessage(botJid, { 
+                    video: { url: 'https://files.catbox.moe/usg5b4.mp4' }, 
+                    caption: `✨ *${global.botname}* is now online!`,
+                    ...newsletterForward
+                })
             }
 
             if (connection === 'close') {
