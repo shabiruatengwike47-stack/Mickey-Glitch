@@ -1,8 +1,12 @@
 const { sendButtons, getBuffer } = require('../lib/myfunc');
-const { toPTT } = require('./lib/converter'); // Path to the code you just shared
 const settings = require('../settings');
 const axios = require('axios');
+const fs = require('fs');
+const path = require('path');
+const { spawn } = require('child_process');
 
+// ────────────────────────────────────────────────
+// CONFIGURATION
 // ────────────────────────────────────────────────
 const PRICE_PER_GB = 1000; 
 const MIN_GB = 10;
@@ -14,7 +18,46 @@ const AD_BANNER_2 = 'https://files.catbox.moe/ljabyq.png';
 const CONFIRMATION_AUDIO = 'https://files.catbox.moe/t80fnj.mp3';
 
 // ────────────────────────────────────────────────
+// YOUR CUSTOM FFMPEG FORMULA
+// ────────────────────────────────────────────────
+function ffmpeg(buffer, args = [], ext = '', ext2 = '') {
+  return new Promise(async (resolve, reject) => {
+    try {
+      const tempDir = path.join(__dirname, '../temp'); // Adjusted for your root
+      if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
+      
+      let tmp = path.join(tempDir, Date.now() + '.' + ext);
+      let out = tmp + '.' + ext2;
+      await fs.promises.writeFile(tmp, buffer);
+      
+      spawn('ffmpeg', ['-y', '-i', tmp, ...args, out])
+        .on('error', reject)
+        .on('close', async (code) => {
+          try {
+            await fs.promises.unlink(tmp);
+            if (code !== 0) return reject(code);
+            let data = await fs.promises.readFile(out);
+            await fs.promises.unlink(out);
+            resolve(data);
+          } catch (e) { reject(e); }
+        });
+    } catch (e) { reject(e); }
+  });
+}
 
+function toPTT(buffer, ext) {
+  return ffmpeg(buffer, [
+    '-vn',
+    '-c:a', 'libopus',
+    '-b:a', '128k',
+    '-vbr', 'on',
+    '-compression_level', '10'
+  ], ext, 'opus');
+}
+
+// ────────────────────────────────────────────────
+// MAIN COMMAND
+// ────────────────────────────────────────────────
 function formatNumber(n) {
     return n.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
 }
@@ -42,13 +85,13 @@ async function halotelCommand(sock, chatId, message, userMessage = '') {
             return await sock.sendMessage(chatId, { text: menu }, { quoted: message });
         }
 
-        // --- CALCULATION LOGIC ---
+        // --- GB & PHONE DETECTION ---
         let cleanArgs = args.map(a => a.replace(/[^0-9.]/g, ''));
         let gbAmount = parseFloat(cleanArgs.find(a => parseFloat(a) >= MIN_GB));
         let phoneNumber = cleanArgs.find(a => a.length >= 9 && a.length <= 13);
 
         if (!gbAmount || isNaN(gbAmount)) {
-            return await sock.sendMessage(chatId, { text: `❌ Kindly specify at least *${MIN_GB} GB*.` });
+            return await sock.sendMessage(chatId, { text: `❌ Kindly order at least *${MIN_GB} GB*.` });
         }
         if (!phoneNumber) {
             return await sock.sendMessage(chatId, { text: `❌ Please provide a valid *recipient number*.` });
@@ -57,7 +100,7 @@ async function halotelCommand(sock, chatId, message, userMessage = '') {
         const totalCost = gbAmount * PRICE_PER_GB;
         const orderRef = `HTL-${Math.floor(1000 + Math.random() * 9000)}`;
 
-        const orderInfo = `✨ *ORDER CONFIRMED*
+        const orderInfo = `✨ *ORDER SECURED*
 
 📦 *Bundle:* ${gbAmount} GB
 💰 *Rate:* TSh ${formatNumber(PRICE_PER_GB)} / 1GB
@@ -76,7 +119,7 @@ _Pay then click confirm below:_`;
             {
                 urlButton: {
                     displayText: '💳 Confirm Payment',
-                    url: `https://wa.me/${SELLER_NUMBER}?text=Paid+${orderRef}+for+${gbAmount}GB`
+                    url: `https://wa.me/${SELLER_NUMBER}?text=Paid+${orderRef}+for+${gbAmount}GB+to+${phoneNumber}`
                 }
             }
         ];
@@ -84,12 +127,12 @@ _Pay then click confirm below:_`;
         let banner = null;
         try { banner = await getBuffer(AD_BANNER_2); } catch (e) {}
 
-        // Send Order Summary
+        // Send Buttons
         await sendButtons(sock, chatId, orderInfo, 'Mickey Glitch Technology', buttons, message, {
             contextInfo: {
                 externalAdReply: {
-                    title: `Total: TSh ${formatNumber(totalCost)}`,
-                    body: `Order ID: ${orderRef}`,
+                    title: `TSh ${formatNumber(totalCost)} | ${gbAmount} GB`,
+                    body: `Order Reference: ${orderRef}`,
                     thumbnail: banner,
                     mediaType: 1,
                     renderLargerThumbnail: true
@@ -97,25 +140,21 @@ _Pay then click confirm below:_`;
             }
         });
 
-        // --- NEW AUDIO CONVERSION SYSTEM ---
+        // --- AUDIO PROCESSING WITH YOUR FORMULA ---
         setTimeout(async () => {
             try {
-                // 1. Download the raw MP3
                 const response = await axios.get(CONFIRMATION_AUDIO, { responseType: 'arraybuffer' });
                 const rawBuffer = Buffer.from(response.data);
 
-                // 2. Convert using your toPTT (FFMPEG) formula
-                // We pass 'mp3' as the input extension for the temp file
+                // Using your toPTT formula directly here
                 const opusBuffer = await toPTT(rawBuffer, 'mp3');
 
-                // 3. Send the converted professional Voice Note
                 await sock.sendMessage(chatId, {
                     audio: opusBuffer,
                     mimetype: 'audio/ogg; codecs=opus',
                     ptt: true 
                 }, { quoted: message });
-                
-                console.log(`[Audio] Order ${orderRef} converted and sent successfully.`);
+
             } catch (e) {
                 console.error('[Audio Error]', e.message);
             }
@@ -127,7 +166,7 @@ _Pay then click confirm below:_`;
         });
 
     } catch (error) {
-        await sock.sendMessage(chatId, { text: '🔄 Something went wrong. Let\'s try that again!' });
+        await sock.sendMessage(chatId, { text: '🔄 Just a moment, let\'s try that again!' });
     }
 }
 
