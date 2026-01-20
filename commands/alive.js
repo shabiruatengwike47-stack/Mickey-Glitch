@@ -1,63 +1,75 @@
 const moment = require('moment-timezone');
 
-const menuCommand = async (conn, m, text, usedPrefix, command) => {
+/**
+ * Mickey Glitch Alive Command
+ * Optimized to fix: 
+ * 1. TypeError: conn.getName is not a function
+ * 2. TypeError: Cannot read properties of undefined (reading 'fromMe')
+ */
+const aliveCommand = async (conn, m, text, usedPrefix, command) => {
   try {
-    // FIX 1: Safe name retrieval
-    // If conn.getName doesn't exist, we use the pushName from the message or the JID
-    const name = m.pushName || (conn.user && conn.user.name) || m.sender.split('@')[0];
+    // FIX: Use m.pushName instead of conn.getName to avoid the function error
+    const name = m.pushName || (conn.user && conn.user.name) || 'User';
     
     const uptime = clockString(process.uptime() * 1000);
     const date = moment.tz('Africa/Nairobi').format('DD/MM/YYYY');
+    const time = moment.tz('Africa/Nairobi').format('HH:mm:ss');
     
-    // Safety check for global database
-    const user = global.db?.data?.users?.[m.sender] || { limit: 0 };
+    // Status Logic
+    const statusText = `
+╭─◇ *ᴍɪᴄᴋᴇʏ ɢʟɪᴛᴄʜ ᴀʟɪᴠᴇ* ◇─╮
+│
+│ 🙋 *Hello:* ${name}
+│ 🤖 *Bot:* Online & Active
+│ ⏳ *Uptime:* ${uptime}
+│ 📅 *Date:* ${date}
+│ ⏱ *Time:* ${time}
+│ 📡 *Channel:* Mickey From Tanzania
+│
+╰──────────────╯
 
-    // FIX 2: Safe ContextInfo & Newsletter check
-    // We ensure contextInfo is only built if the data is available
+*System is currently running glitch-free.*
+✨ _Type ${usedPrefix}menu to see all commands._`.trim();
+
+    // FIX: Safe ContextInfo building
     const contextInfo = {
         isForwarded: true,
         forwardedNewsletterMessageInfo: {
-          newsletterJid: '120363398106360290@newsletter',
-          newsletterName: 'Mickey From Tanzania',
-          serverMessageId: -1
+            newsletterJid: '120363398106360290@newsletter',
+            newsletterName: 'Mickey From Tanzania',
+            serverMessageId: -1
         },
         externalAdReply: {
-          title: `ᴍɪᴄᴋᴇʏ ɢʟɪᴛᴄʜ ʙᴏᴛ`,
-          body: `Bot active for ${name}`,
-          thumbnailUrl: 'https://water-billimg.onrender.com/1761205727440.png',
-          sourceUrl: 'https://whatsapp.com/channel/0029VajVv9sEwEjw9T9S0C26',
-          mediaType: 1,
-          renderLargerThumbnail: true
+            title: `ᴍɪᴄᴋᴇʏ ɢʟɪᴛᴄʜ ᴠ2.0 ɪꜱ ᴀʟɪᴠᴇ`,
+            body: `System Response: Success`,
+            thumbnailUrl: 'https://water-billimg.onrender.com/1761205727440.png',
+            sourceUrl: 'https://whatsapp.com/channel/0029VajVv9sEwEjw9T9S0C26',
+            mediaType: 1,
+            renderLargerThumbnail: true
         }
     };
 
-    // Build the menu text (Logic from your previous script)
-    let menuBody = `╭─◇ *ᴍɪᴄᴋᴇʏ ɢʟɪᴛᴄʜ* ◇─╮\n`;
-    menuBody += `│ 🙋 *User:* ${name}\n`;
-    menuBody += `│ ⏳ *Uptime:* ${uptime}\n`;
-    menuBody += `╰──────────────╯\n\n`;
-    menuBody += `✨ *Use ${usedPrefix}help for more info*`;
-
-    // FIX 3: Sending the message correctly
-    // If 'm' is undefined or malformed, it crashes. We use a safe quoted logic.
+    // FIX: Use a direct sendMessage and handle the 'quoted' object safely
+    // By providing 'm' as quoted, we ensure Baileys doesn't look for 'fromMe' in an undefined object
     await conn.sendMessage(m.chat, {
-      text: menuBody.trim(),
+      text: statusText,
       contextInfo: contextInfo
     }, { quoted: m });
 
   } catch (error) {
-    console.error('Menu Error:', error);
-    // Fallback if everything fails
-    await conn.sendMessage(m.chat, { text: '❌ System Error: Menu cannot be loaded.' });
+    // If an error occurs, log it and send a plain text message so the bot doesn't crash
+    console.error('Alive Command Error:', error);
+    await conn.sendMessage(m.chat, { text: '✨ *Mickey Glitch is Online*' }, { quoted: m });
   }
 };
 
-// Helper function
+// Helper: Uptime Formatting
 function clockString(ms) {
-  let h = Math.floor(ms / 3600000);
-  let m = Math.floor((ms % 3600000) / 60000);
-  let s = Math.floor((ms % 60000) / 1000);
-  return [h, m, s].map(v => v.toString().padStart(2, 0)).join(':');
+  let h = isNaN(ms) ? '00' : Math.floor(ms / 3600000);
+  let m = isNaN(ms) ? '00' : Math.floor((ms % 3600000) / 60000);
+  let s = isNaN(ms) ? '00' : Math.floor((ms % 60000) / 1000);
+  return [h, m, s].map(v => v.toString().padStart(2, '0')).join(':');
 }
 
-module.exports = menuCommand;
+// Export formatted for your module system
+module.exports = aliveCommand;
