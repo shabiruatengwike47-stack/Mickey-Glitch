@@ -84,23 +84,10 @@ async function startXeonBotInc() {
             msgRetryCounterCache
         })
 
-        // Reusable Newsletter Forwarding Context
-        const newsletterForward = {
-            contextInfo: {
-                forwardingScore: 999,
-                isForwarded: true,
-                forwardedNewsletterMessageInfo: {
-                    newsletterJid: channelRD.id,
-                    newsletterName: channelRD.name,
-                    serverMessageId: 143
-                }
-            }
-        }
-
-        // ================= [ MESSAGE HANDLING ] =================
         XeonBotInc.ev.on('creds.update', saveCreds)
         store.bind(XeonBotInc.ev)
 
+        // ================= [ MESSAGE HANDLING ] =================
         XeonBotInc.ev.on('messages.upsert', async chatUpdate => {
             try {
                 const mek = chatUpdate.messages?.[0]
@@ -109,6 +96,7 @@ async function startXeonBotInc() {
                 const type = Object.keys(mek.message)[0]
                 const buttonId = (type === 'buttonsResponseMessage') ? mek.message.buttonsResponseMessage.selectedButtonId : 
                                  (type === 'templateButtonReplyMessage') ? mek.message.templateButtonReplyMessage.selectedId : 
+                                 (type === 'interactiveResponseMessage') ? JSON.parse(mek.message.interactiveResponseMessage.nativeFlowResponseMessage.paramsJson).id :
                                  (type === 'listResponseMessage') ? mek.message.listResponseMessage.singleSelectReply.selectedRowId : null
 
                 if (buttonId) mek.body = buttonId 
@@ -131,27 +119,64 @@ async function startXeonBotInc() {
                 console.log(chalk.green(`${global.themeemoji} Bot Connected Successfully! ✅`))
                 
                 const botJid = XeonBotInc.user.id.split(':')[0] + '@s.whatsapp.net'
-                
-                // Professional Connection Dashboard
-                const professionalCaption = `
-╔══════════════════════╗
-║   *CONNECTION SUCCESS* ╚══════════════════════╝
 
-✨ *SYSTEM STATUS:* Online
-🤖 *BOT NAME:* ${global.botname}
-📡 *CHANNEL:* ${channelRD.name}
-🕒 *TIME:* ${new Date().toLocaleString()}
-⚙️ *RAM USAGE:* ${(process.memoryUsage().rss / 1024 / 1024).toFixed(2)} MB
+                // 1. Prepare Video Media Header
+                const { videoMessage } = await prepareWAMessageMedia(
+                    { video: { url: 'https://files.catbox.moe/usg5b4.mp4' } }, 
+                    { upload: XeonBotInc.waUploadToServer }
+                )
 
-> *Verified System Boot Sequence Completed.*
-`.trim()
+                // 2. Build Interactive Ad Message
+                const messageContent = {
+                    viewOnceMessage: {
+                        message: {
+                            interactiveMessage: {
+                                header: {
+                                    hasVideoMessage: true,
+                                    videoMessage: videoMessage
+                                },
+                                body: {
+                                    text: `*CONNECTION SUCCESSFUL*\n\n✨ *Status:* Online\n🤖 *Bot:* ${global.botname}\n📡 *Host:* VPS Tanzania\n🕒 *Time:* ${new Date().toLocaleString()}\n\n_Your system is now glitch-free and ready for commands._`
+                                },
+                                footer: {
+                                    text: `© 2026 ${channelRD.name}`
+                                },
+                                nativeFlowMessage: {
+                                    buttons: [
+                                        {
+                                            name: "cta_url",
+                                            buttonParamsJson: JSON.stringify({
+                                                display_text: "Join Official Channel",
+                                                url: "https://whatsapp.com/channel/0029VajVv9sEwEjw9T9S0C26",
+                                                merchant_url: "https://whatsapp.com/channel/0029VajVv9sEwEjw9T9S0C26"
+                                            })
+                                        },
+                                        {
+                                            name: "quick_reply",
+                                            buttonParamsJson: JSON.stringify({
+                                                display_text: "Check Speed (Ping)",
+                                                id: ".ping"
+                                            })
+                                        }
+                                    ]
+                                },
+                                contextInfo: {
+                                    forwardingScore: 999,
+                                    isForwarded: true,
+                                    forwardedNewsletterMessageInfo: {
+                                        newsletterJid: channelRD.id,
+                                        newsletterName: channelRD.name,
+                                        serverMessageId: 143
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
 
-                // Send Professional Video Notification with Newsletter Forward
-                await XeonBotInc.sendMessage(botJid, { 
-                    video: { url: 'https://files.catbox.moe/usg5b4.mp4' }, 
-                    caption: professionalCaption,
-                    ...newsletterForward
-                })
+                // 3. Send the Ad-style Startup Message
+                const msgs = generateWAMessageFromContent(botJid, messageContent, { userJid: XeonBotInc.user.id })
+                await XeonBotInc.relayMessage(botJid, msgs.message, { messageId: msgs.key.id })
             }
 
             if (connection === 'close') {
