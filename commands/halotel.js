@@ -21,7 +21,7 @@ function formatNumber(n) {
 }
 
 function generateOrderRef() {
-    return `HTL-${Date.now().toString().slice(-4)}`;
+    return `HTL-${Math.floor(1000 + Math.random() * 9000)}`;
 }
 
 async function halotelCommand(sock, chatId, message, userMessage = '') {
@@ -36,48 +36,33 @@ async function halotelCommand(sock, chatId, message, userMessage = '') {
         const args = text.split(/\s+/).slice(1);
 
         if (args.length === 0) {
-            const menu = `🚀 *HALOTEL DATA SHOP*
-
-Buy cheap bundles in seconds.
-
-*Rate:* TSh ${formatNumber(PRICE_PER_GB)} / GB
-*Min:* ${MIN_GB} GB
-
-*Format:* .halotel <GB> <Number>
-*Example:* .halotel 20 255612130873`;
-
+            const menu = `🚀 *HALOTEL DATA SHOP*\n\n*Rate:* TSh ${formatNumber(PRICE_PER_GB)} / GB\n*Min:* ${MIN_GB} GB\n\n*Format:* .halotel <GB> <Number>\n*Example:* .halotel 20 255612130873`;
             return await sock.sendMessage(chatId, { text: menu }, { quoted: message });
         }
 
-        let gbAmount = args.find(a => !isNaN(a) && parseInt(a) >= MIN_GB);
-        let phoneNumber = args.find(a => a.length >= 9 && a.length <= 13 && !isNaN(a.replace('+', '')));
+        // --- IMPROVED CALCULATION LOGIC ---
+        // Find the first number in args that is >= MIN_GB and treat as GB
+        let gbInput = args.find(a => !isNaN(parseFloat(a)) && parseFloat(a) >= MIN_GB);
+        let gbAmount = gbInput ? parseFloat(gbInput) : null;
+        
+        // Find a phone-like number (9 to 13 digits)
+        let phoneNumber = args.find(a => a.replace(/[^0-9]/g, '').length >= 9 && a.replace(/[^0-9]/g, '').length <= 13);
 
         if (!gbAmount || !phoneNumber) {
-            return await sock.sendMessage(chatId, { text: '💡 *Quick Tip:* Mention both GB and Phone Number.\nExample: `.halotel 10 255615000000`' });
+            return await sock.sendMessage(chatId, { text: '💡 *Usage:* .halotel <GB> <Number>\nExample: `.halotel 12 255615000000`' });
         }
 
-        const totalPrice = gbAmount * PRICE_PER_GB;
+        // Precise math calculation
+        const totalPrice = Math.floor(gbAmount * PRICE_PER_GB);
         const orderRef = generateOrderRef();
 
-        const orderInfo = `✨ *ORDER SUMMARY*
-━━━━━━━━━━━━━━━━━━
-📦 *Bundle:* ${gbAmount} GB
-📱 *Number:* ${phoneNumber}
-💰 *Amount:* TSh ${formatNumber(totalPrice)}
-🆔 *Ref:* ${orderRef}
-━━━━━━━━━━━━━━━━━━
-
-*Payment Details:*
-Account: ${SELLER_NAME}
-Number: ${SELLER_NUMBER}
-
-_Once paid, click the button below:_`;
+        const orderInfo = `✨ *ORDER SUMMARY*\n━━━━━━━━━━━━━━━━━━\n📦 *Bundle:* ${gbAmount} GB\n📱 *Number:* ${phoneNumber}\n💰 *Amount:* TSh ${formatNumber(totalPrice)}\n🆔 *Ref:* ${orderRef}\n━━━━━━━━━━━━━━━━━━\n\n*Payment Details:*\nAccount: ${SELLER_NAME}\nNumber: ${SELLER_NUMBER}\n\n_Kindly pay then click confirm below:_`;
 
         const buttons = [
             {
                 urlButton: {
                     displayText: '💳 Confirm Payment',
-                    url: `https://wa.me/${SELLER_NUMBER}?text=Paid+Ref:${orderRef}+${gbAmount}GB`
+                    url: `https://wa.me/${SELLER_NUMBER}?text=Paid+Ref:${orderRef}+${gbAmount}GB+for+${phoneNumber}`
                 }
             }
         ];
@@ -85,11 +70,11 @@ _Once paid, click the button below:_`;
         let banner = null;
         try { banner = await getBuffer(AD_BANNER_2); } catch (e) {}
 
-        await sendButtons(sock, chatId, orderInfo, 'Safe & Fast Delivery', buttons, message, {
+        await sendButtons(sock, chatId, orderInfo, 'Mickey Glitch Technology', buttons, message, {
             contextInfo: {
                 externalAdReply: {
-                    title: `Halotel Bundle Order`,
-                    body: `Ref: ${orderRef}`,
+                    title: `Halotel Payment: TSh ${formatNumber(totalPrice)}`,
+                    body: `Order ID: ${orderRef}`,
                     thumbnail: banner,
                     mediaType: 1,
                     renderLargerThumbnail: true
@@ -97,24 +82,27 @@ _Once paid, click the button below:_`;
             }
         });
 
-        // ─── OLDER AUDIO FORMAT LOGIC ───
+        // --- FIXED AUDIO PLAYBACK LOGIC ---
         setTimeout(async () => {
             try {
-                const response = await axios.get(CONFIRMATION_AUDIO, { responseType: 'arraybuffer' });
+                // Fetching as arraybuffer is the most stable way for Baileys
+                const resp = await axios.get(CONFIRMATION_AUDIO, { responseType: 'arraybuffer' });
+                const buffer = Buffer.from(resp.data);
+
                 await sock.sendMessage(chatId, {
-                    audio: Buffer.from(response.data),
-                    /* Using 'audio/mp4' with ptt: true is the most stable 
-                       "older" way to ensure the voice note plays correctly 
-                       across all versions of WhatsApp.
-                    */
-                    mimetype: 'audio/mp4', 
-                    ptt: true 
-                });
-            } catch (e) { /* Error ignored for smooth UI */ }
+                    audio: buffer,
+                    // 'audio/ogg; codecs=opus' is the universal standard for WhatsApp voice notes
+                    mimetype: 'audio/ogg; codecs=opus', 
+                    ptt: true // Sends as a blue-microphone voice note
+                }, { quoted: message });
+            } catch (e) {
+                console.log('Audio Error:', e.message);
+            }
         }, 1500);
 
+        // Notify Seller
         await sock.sendMessage(SELLER_JID, {
-            text: `🔔 *New Halotel:* ${orderRef}\n📦 ${gbAmount}GB\n📱 ${phoneNumber}\n💰 TSh ${formatNumber(totalPrice)}`
+            text: `🔔 *New Order:* ${orderRef}\n📦 ${gbAmount}GB\n📱 ${phoneNumber}\n💰 TSh ${formatNumber(totalPrice)}`
         });
 
     } catch (error) {
