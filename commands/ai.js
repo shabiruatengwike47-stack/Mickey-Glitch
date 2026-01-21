@@ -19,7 +19,8 @@ const VOICE_MODELS = [
 
 const CONFIG = {
     HANDLER_TIMEOUT: 120000, // 2 minutes
-    API_TIMEOUT: 30000, // 30 seconds
+    API_TIMEOUT: 60000, // 60 seconds
+    API_RETRY_COUNT: 3, // Retry attempts
     API_BASE_URL: "https://api.agatz.xyz/api/voiceover",
     MENU_IMAGE: "https://files.catbox.moe/w6mzc7.jpg"
 };
@@ -51,17 +52,38 @@ const getSelectedModel = (selectedNumber) => {
 };
 
 /**
- * Generate audio using the voice API
+ * Generate audio using the voice API with retry logic
  * @param {string} inputText - Text to convert to speech
  * @param {Object} selectedModel - Selected voice model
  * @returns {Promise<Object>} - API response
  */
 const generateAudio = async (inputText, selectedModel) => {
-    const apiUrl = `${CONFIG.API_BASE_URL}?text=${encodeURIComponent(inputText)}&model=${selectedModel.model}`;
-    const response = await axios.get(apiUrl, {
-        timeout: CONFIG.API_TIMEOUT
-    });
-    return response.data;
+    let lastError;
+    
+    for (let attempt = 1; attempt <= CONFIG.API_RETRY_COUNT; attempt++) {
+        try {
+            const apiUrl = `${CONFIG.API_BASE_URL}?text=${encodeURIComponent(inputText)}&model=${selectedModel.model}`;
+            const response = await axios.get(apiUrl, {
+                timeout: CONFIG.API_TIMEOUT
+            });
+            return response.data;
+        } catch (error) {
+            lastError = error;
+            console.error(`API attempt ${attempt}/${CONFIG.API_RETRY_COUNT} failed:`, error.message);
+            
+            // If timeout, wait before retrying
+            if (error.code === 'ECONNABORTED' || error.message.includes('timeout')) {
+                if (attempt < CONFIG.API_RETRY_COUNT) {
+                    await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds before retry
+                }
+            } else {
+                // Don't retry on non-timeout errors
+                break;
+            }
+        }
+    }
+    
+    throw lastError;
 };
 
 /**
@@ -138,8 +160,15 @@ const handleVoiceSelection = async ({ sock, chatId, receivedMsg, receivedText, i
             }
         } catch (apiError) {
             console.error("API Error:", apiError.message);
+            
+            // Check if it's a timeout error
+            let errorMsg = "❌ Error processing your request.";
+            if (apiError.code === 'ECONNABORTED' || apiError.message.includes('timeout')) {
+                errorMsg = "⏱️ Audio generation is taking longer than expected. Please try again or use a shorter text.";
+            }
+            
             await sock.sendMessage(chatId, {
-                text: `❌ Error processing your request: ${apiError.message}`
+                text: errorMsg
             }, { quoted: receivedMsg });
         }
     } catch (error) {
