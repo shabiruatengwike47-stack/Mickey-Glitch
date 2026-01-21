@@ -1,4 +1,4 @@
-const { cmd } = require('../command');
+// AI Voice Command – Text to speech with different AI voices
 const axios = require('axios');
 
 // ============ CONFIGURATION ============
@@ -69,7 +69,7 @@ const generateAudio = async (inputText, selectedModel) => {
  * @param {Object} params - Handler parameters
  * @returns {Function} - Message handler function
  */
-const createMessageHandler = ({ conn, from, m, messageID, handlerActive, reply, inputText }) => {
+const createMessageHandler = ({ sock, chatId, message, messageID, handlerActive, inputText }) => {
     return async (msgData) => {
         if (!handlerActive) return;
         
@@ -82,15 +82,14 @@ const createMessageHandler = ({ conn, from, m, messageID, handlerActive, reply, 
         const senderID = receivedMsg.key.remoteJid;
         const isReplyToBot = receivedMsg.message.extendedTextMessage?.contextInfo?.stanzaId === messageID;
 
-        if (!isReplyToBot || senderID !== from) return;
+        if (!isReplyToBot || senderID !== chatId) return;
 
         // Add voice selection handler logic
         await handleVoiceSelection({
-            conn,
-            from,
+            sock,
+            chatId,
             receivedMsg,
             receivedText,
-            reply,
             inputText,
             handlerActive
         });
@@ -100,12 +99,12 @@ const createMessageHandler = ({ conn, from, m, messageID, handlerActive, reply, 
 /**
  * Handle voice model selection and audio generation
  */
-const handleVoiceSelection = async ({ conn, from, receivedMsg, receivedText, reply, inputText, handlerActive }) => {
+const handleVoiceSelection = async ({ sock, chatId, receivedMsg, receivedText, inputText, handlerActive }) => {
     try {
         handlerActive = false;
 
         // React to selection
-        await conn.sendMessage(from, {
+        await sock.sendMessage(chatId, {
             react: { text: '⬇️', key: receivedMsg.key }
         });
 
@@ -113,11 +112,14 @@ const handleVoiceSelection = async ({ conn, from, receivedMsg, receivedText, rep
         const selectedModel = getSelectedModel(selectedNumber);
 
         if (!selectedModel) {
-            return reply("❌ Invalid option! Please reply with a number from the menu.");
+            await sock.sendMessage(chatId, {
+                text: "❌ Invalid option! Please reply with a number from the menu."
+            }, { quoted: receivedMsg });
+            return;
         }
 
         // Show processing message
-        await conn.sendMessage(from, {
+        await sock.sendMessage(chatId, {
             text: `🔊 Generating audio with ${selectedModel.name} voice...`
         }, { quoted: receivedMsg });
 
@@ -125,97 +127,103 @@ const handleVoiceSelection = async ({ conn, from, receivedMsg, receivedText, rep
             const data = await generateAudio(inputText, selectedModel);
 
             if (data.status === 200 && data.data?.oss_url) {
-                await conn.sendMessage(from, {
+                await sock.sendMessage(chatId, {
                     audio: { url: data.data.oss_url },
                     mimetype: "audio/mpeg"
                 }, { quoted: receivedMsg });
             } else {
-                reply("❌ Error generating audio. Please try again.");
+                await sock.sendMessage(chatId, {
+                    text: "❌ Error generating audio. Please try again."
+                }, { quoted: receivedMsg });
             }
         } catch (apiError) {
             console.error("API Error:", apiError.message);
-            reply(`❌ Error processing your request: ${apiError.message}`);
+            await sock.sendMessage(chatId, {
+                text: `❌ Error processing your request: ${apiError.message}`
+            }, { quoted: receivedMsg });
         }
     } catch (error) {
         console.error("Selection Handler Error:", error);
-        reply("❌ An error occurred while processing your selection.");
+        await sock.sendMessage(chatId, {
+            text: "❌ An error occurred while processing your selection."
+        }, { quoted: receivedMsg });
     }
 };
 
 /**
  * Setup response timeout handler
  */
-const setupTimeoutHandler = ({ conn, from, reply, handlerActive, messageHandler }) => {
+const setupTimeoutHandler = ({ sock, chatId, handlerActive, messageHandler }) => {
     return setTimeout(() => {
         handlerActive = false;
-        conn.ev.off("messages.upsert", messageHandler);
-        reply("⌛ Voice selection timed out. Please try the command again.");
+        sock.ev.off("messages.upsert", messageHandler);
+        sock.sendMessage(chatId, {
+            text: "⌛ Voice selection timed out. Please try the command again."
+        });
     }, CONFIG.HANDLER_TIMEOUT);
 };
 
 // ============ MAIN COMMAND ============
 
-cmd({
-    pattern: "aivoice",
-    alias: ["vai", "voicex", "voiceai"],
-    desc: "Text to speech with different AI voices",
-    category: "main",
-    react: "🪃",
-    filename: __filename
-},
-async (conn, mek, m, { 
-    from, 
-    args, 
-    reply 
-}) => {
+/**
+ * AI Voice Command
+ * Usage: .aivoice <text>
+ * Aliases: .vai, .voicex, .voiceai
+ */
+async function aiVoiceCommand(sock, chatId, senderId, text, message) {
     try {
         // Validate input
-        if (!args[0]) {
-            return reply("Please provide text after the command.\nExample: .aivoice hello");
+        if (!text || text.trim() === '') {
+            await sock.sendMessage(chatId, {
+                text: "Please provide text after the command.\nExample: .aivoice hello"
+            }, { quoted: message });
+            return;
         }
 
-        const inputText = args.join(' ');
+        const inputText = text.trim();
 
         // Send initial reaction
-        await conn.sendMessage(from, {
-            react: { text: '⏳', key: m.key }
+        await sock.sendMessage(chatId, {
+            react: { text: '⏳', key: message.key }
         });
 
         // Build and send menu
         const menuText = buildMenuText(inputText);
-        const sentMsg = await conn.sendMessage(from, {
+        const sentMsg = await sock.sendMessage(chatId, {
             image: { url: CONFIG.MENU_IMAGE },
             caption: menuText
-        }, { quoted: m });
+        }, { quoted: message });
 
         const messageID = sentMsg.key.id;
         let handlerActive = true;
 
         // Setup message handler
         const messageHandler = createMessageHandler({
-            conn,
-            from,
-            m,
+            sock,
+            chatId,
+            message,
             messageID,
             handlerActive,
-            reply,
             inputText
         });
 
         // Setup timeout
         const handlerTimeout = setupTimeoutHandler({
-            conn,
-            from,
-            reply,
+            sock,
+            chatId,
             handlerActive,
             messageHandler
         });
 
         // Register handler
-        conn.ev.on("messages.upsert", messageHandler);
+        sock.ev.on("messages.upsert", messageHandler);
 
     } catch (error) {
-        console.error("Command Error:", error);
-        reply("❌ An error occurred. Please try again.");
+        console.error("AI Voice Command Error:", error);
+        await sock.sendMessage(chatId, {
+            text: "❌ An error occurred. Please try again."
+        }, { quoted: message });
     }
-}); 
+}
+
+module.exports = aiVoiceCommand; 
