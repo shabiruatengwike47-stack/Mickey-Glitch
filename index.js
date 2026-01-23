@@ -293,8 +293,7 @@ async function startXeonBotInc() {
                     const onlineCaption = `✨ *𝙼𝚒𝚌𝚔𝚎𝚢 𝙶𝚕𝚒𝚝𝚌𝚑™* is now online!\n\n🕒 Time: ${new Date().toLocaleString()}\n🔋 Status: Active & Ready\n🟢 Connection: Established\n⚡ Bot Version: ${settings.version}\n\n_Ready to assist. Type .help for commands_`
                     
                     await XeonBotInc.sendMessage(botJid, {
-                        image: { url: 'https://files.catbox.moe/llc9v7.png' },
-                        caption: onlineCaption,
+                        text: onlineCaption,
                         contextInfo: {
                             isForwarded: true,
                             forwardedNewsletterMessageInfo: {
