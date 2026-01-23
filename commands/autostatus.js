@@ -122,7 +122,7 @@ async function forwardStatus(sock, msg) {
 
     // 1. Info header
     await sock.sendMessage(TARGET_JID, {
-        text: `📸 New status from \( {phone} ( \){msgType})`
+        text: `📸 New status from ${phone} (${msgType})`
     }).catch(() => {});
 
     await new Promise(r => setTimeout(r, randomMs(700, 1400)));
@@ -171,7 +171,7 @@ async function forwardStatus(sock, msg) {
             [handler.key]: buffer,
             mimetype: content.mimetype || handler.mime,
             caption: caption || undefined,
-            fileName: content.fileName || `status-\( {Date.now()}. \){handler.ext}`,
+            fileName: content.fileName || `status-${Date.now()}.${handler.ext}`,
             ...(content.viewOnce ? { viewOnce: true } : {})
         });
 

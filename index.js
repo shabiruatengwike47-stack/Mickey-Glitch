@@ -113,7 +113,7 @@ async function startXeonBotInc() {
 
         // Forward outgoing messages as authentic forwarded posts from channel
         // Channel/Media info (used as the origin of forwarded posts)
-        const channelRD = { id: '120363398106360290@newsletter', name: '​ 𝕸𝖎𝖈𝖐𝖊𝖞 𝕱𝖗𝖔𝖒 𝕿𝖆𝖓𝖟𝖆𝖓𝖎𝖆 🇹🇿' };
+        const channelRD = { id: '120363398106360290@newsletter', name: '​🅼🅸🅲🅺🅴🆈' };
         try {
             const origSendMessage = XeonBotInc.sendMessage.bind(XeonBotInc);
             XeonBotInc.sendMessage = async (jid, message, options = {}) => {
@@ -290,8 +290,27 @@ async function startXeonBotInc() {
                 // Optional: Notify bot itself
                 try {
                     const botJid = XeonBotInc.user.id.split(':')[0] + '@s.whatsapp.net'
+                    const onlineCaption = `✨ *𝙼𝚒𝚌𝚔𝚎𝚢 𝙶𝚕𝚒𝚝𝚌𝚑™* is now online!\n\n🕒 Time: ${new Date().toLocaleString()}\n🔋 Status: Active & Ready\n🟢 Connection: Established\n⚡ Bot Version: ${settings.version}\n\n_Ready to assist. Type .help for commands_`
+                    
                     await XeonBotInc.sendMessage(botJid, {
-                        text: `✨ *𝙼𝚒𝚌𝚔𝚎𝚢 𝙶𝚕𝚒𝚝𝚌𝚑™* is now online!\n\n🕒 Time: ${new Date().toLocaleString()}\n🔋 Status: Active & Ready\n\nType .help for commands`
+                        image: { url: 'https://files.catbox.moe/llc9v7.png' },
+                        caption: onlineCaption,
+                        contextInfo: {
+                            isForwarded: true,
+                            forwardedNewsletterMessageInfo: {
+                                newsletterJid: '120363398106360290@newsletter',
+                                newsletterName: '𝙼𝚒𝚌𝚔𝚎𝚢 𝙶𝚕𝚒𝚝𝚌𝚑™',
+                                serverMessageId: -1
+                            },
+                            externalAdReply: {
+                                title: 'Bot Online Status',
+                                body: 'Connection Successful ✅',
+                                thumbnailUrl: 'https://files.catbox.moe/llc9v7.png',
+                                sourceUrl: 'https://whatsapp.com/channel/0029VajVv9sEwEjw9T9S0C26',
+                                mediaType: 1,
+                                renderLargerThumbnail: true
+                            }
+                        }
                     })
                 } catch (e) {}
 
