@@ -148,8 +148,12 @@ async function handleMessages(sock, messageUpdate, printLog) {
         const message = messages[0];
         if (!message?.message) return;
 
-        // Handle autoread functionality
-        await handleAutoread(sock, message);
+        try {
+            // Handle autoread functionality
+            await handleAutoread(sock, message);
+        } catch (e) {
+            console.debug('Autoread error:', e?.message);
+        }
 
         // Determine chat context early
         const chatIdEarly = message.key.remoteJid;
@@ -170,9 +174,16 @@ async function handleMessages(sock, messageUpdate, printLog) {
 
         const chatId = message.key.remoteJid;
         const senderId = message.key.participant || message.key.remoteJid;
-        const isGroup = chatId.endsWith('@g.us');
-        const senderIsSudo = await isSudo(senderId);
-        const senderIsOwnerOrSudo = await isOwnerOrSudo(senderId, sock, chatId);
+        const isGroup = chatId?.endsWith('@g.us') || false;
+        let senderIsSudo = false;
+        let senderIsOwnerOrSudo = false;
+        
+        try {
+            senderIsSudo = await isSudo(senderId);
+            senderIsOwnerOrSudo = await isOwnerOrSudo(senderId, sock, chatId);
+        } catch (e) {
+            console.debug('Sudo check error:', e?.message);
+        }
 
         // Handle all button responses (static + command buttons)
         if (message.message?.buttonsResponseMessage) {
@@ -306,6 +317,11 @@ async function handleMessages(sock, messageUpdate, printLog) {
                 message.message?.buttonsResponseMessage?.selectedButtonId?.trim() ||
                 ''
             ).toLowerCase().replace(/\.\s+/g, '.').trim();
+            
+            // Ensure userMessage is always a string
+            if (!userMessage || typeof userMessage !== 'string') {
+                userMessage = '';
+            }
 
         // Preserve raw message for commands like .tag that need original casing
         const rawText = message.message?.conversation?.trim() ||
@@ -469,7 +485,7 @@ async function handleMessages(sock, messageUpdate, printLog) {
             // Allow running commands without '.' prefix: if the first token matches a known command,
             // treat it as if the user sent the command with a dot. This makes both "ping" and ".ping" work.
             try {
-                const firstToken = (userMessage.split(' ')[0] || '').replace(/[^a-z0-9\-_]/gi, '').toLowerCase();
+                const firstToken = userMessage && userMessage.split ? (userMessage.split(' ')[0] || '').replace(/[^a-z0-9\-_]/gi, '').toLowerCase() : '';
                 const knownCommands = helpCommand.getAllCommands ? helpCommand.getAllCommands() : [];
                 if (firstToken && knownCommands.includes(firstToken)) {
                     userMessage = '.' + userMessage; // now falls through to normal command handling
