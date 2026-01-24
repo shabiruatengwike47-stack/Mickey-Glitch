@@ -124,15 +124,12 @@ function buildHelpMessage(cmdList, opts = {}) {
     }
   });
 
-  const header = `╔═══════════════════════════════════════════\n` +
-    `║  💎 ${settings.botName || '𝙼𝚒𝚌𝚔𝚎𝚢 𝙶𝚕𝚒𝚝𝚌𝚑'} - COMMAND CENTER 💎\n` +
-    `╠═══════════════════════════════════════════\n` +
-    `║ 👑 Owner: ${settings.botOwner || 'Mickey'} | v${settings.version || '?.?'}\n` +
-    `║ 👤 User: ${name || user || 'Unknown'}\n` +
-    `║ ⏱ Uptime: ${runtime || getUptime()} | ⌚ ${time || new Date().toLocaleTimeString('en-GB', { hour12: false })}\n` +
-    `║ 🎛 Mode: ${mode || settings.commandMode || 'public'} | Prefix: *${prefix || '.' }*\n` +
-    `║ 💾 RAM: ${ramUsed || '?'} / ${ramTotal || '?'} GB\n` +
-    `╚═══════════════════════════════════════════\n\n`;
+  const header = `🎯 *${settings.botName || '𝙼𝚒𝚌𝚔𝚎𝚢 𝙶𝚕𝚒𝚝𝚌𝚑'} - COMMAND CENTER* v${settings.version || '?.?'}\n` +
+    `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+    `👑 *Owner:* ${settings.botOwner || 'Mickey'} | 👤 *User:* ${name || user || 'Unknown'}\n` +
+    `⏱ *Uptime:* ${runtime || getUptime()} | 🎛 *Mode:* ${mode || settings.commandMode || 'public'}\n` +
+    `📍 *Prefix:* ${prefix || '.'} | 💾 *RAM:* ${ramUsed || '?'}/${ramTotal || '?'}GB\n` +
+    `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
 
   let content = header;
 
@@ -142,22 +139,19 @@ function buildHelpMessage(cmdList, opts = {}) {
     
     const emoji = getCategoryEmoji(category);
     const categoryTitle = category.charAt(0).toUpperCase() + category.slice(1);
-    content += `\n${emoji} *${categoryTitle}* [${cmds.length}]\n`;
-    content += `${'─'.repeat(40)}\n`;
+    content += `\n${emoji} *${categoryTitle}* (${cmds.length})\n`;
     
     cmds.forEach(cmd => {
       const nameStr = `${prefix}${cmd.name}`;
-      const descStr = cmd.desc ? ` ➜ ${cmd.desc}` : '';
-      content += `  • *${nameStr}*${descStr}\n`;
+      const descStr = cmd.desc ? ` - ${cmd.desc}` : '';
+      content += `• ${nameStr}${descStr}\n`;
     });
   }
 
   const total = cmdList.length;
-  content += `\n${'═'.repeat(45)}\n`;
-  content += `✨ *Total Commands:* ${total} | *Excluded:* ${EXCLUDE.length}\n`;
-  content += `📖 *Usage:* ${prefix}command [args]\n`;
-  content += `❓ *Need Help?* Reply with command name for details\n`;
-  content += `${'═'.repeat(45)}\n`;
+  content += `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+  content += `✨ *Total:* ${total} | 📚 *Prefix:* ${prefix} | 📖 *Usage:* ${prefix}cmd [args]\n`;
+  content += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
 
   return content;
 } 
