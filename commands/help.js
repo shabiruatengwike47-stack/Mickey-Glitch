@@ -1,5 +1,6 @@
 // ──────────────────────────────────────────────────────────────
-//  Help – Text-based, auto-synced from `commands/` folder (no slides)
+//  🎯 ADVANCED HELP SYSTEM - Interactive Command Browser
+//  Auto-synced from `commands/` folder with categorization
 // ──────────────────────────────────────────────────────────────
 const fs = require('fs');
 const path = require('path');
@@ -7,18 +8,23 @@ const os = require('os');
 const settings = require('../settings');
 
 /**
- * NOTE:
- * - This help command auto-builds the command list by reading the `commands/` folder.
- * - To hide commands from the help output, add their filename (without extension) to `EXCLUDE`.
+ * COMMAND CATEGORIES - Organize commands by function
  */
-const EXCLUDE = [
-  'help' // exclude self by default; add other command base names here (e.g., 'debug')
-];
+const COMMAND_CATEGORIES = {
+  'admin': ['ban', 'unban', 'kick', 'promote', 'demote', 'mute', 'unmute', 'warn', 'warnings', 'clear'],
+  'group': ['groupmanage', 'tagall', 'tagnotadmin', 'tag', 'mention', 'hidetag'],
+  'fun': ['compliment', 'character', 'wasted', 'emojimix', 'textmaker'],
+  'media': ['sticker', 'sticker-alt', 'stickercrop', 'stickertelegram', 'img-blur', 'video', 'url', 'lyrics'],
+  'social': ['instagram', 'facebook', 'tiktok', 'spotify', 'youtube'],
+  'download': ['play', 'igs', 'imagine'],
+  'utility': ['ping', 'alive', 'update', 'checkupdates', 'settings', 'weather', 'translate', 'tts'],
+  'owner': ['owner', 'pair', 'sudo', 'staff', 'resetlink', 'phone', 'halotel'],
+  'auto': ['autostatus', 'autoread', 'autotyping', 'autobio', 'antitag', 'antidelete', 'antilink', 'antibadword'],
+  'ai': ['ai', 'chatbot']
+};
 
-// Banner image used in externalAdReply (falls back to a hosted image)
+const EXCLUDE = ['help', 'index', 'main'];
 const BANNER = 'https://water-billimg.onrender.com/1761205727440.png';
-
-// No paging — always show the full, auto-synced command list
 
 function getUptime() {
   const uptime = process.uptime();
@@ -51,13 +57,29 @@ function getCommandDescription(filePath) {
       if (t.startsWith('*')) return t.replace(/^\*\s?/, '').trim();
     }
   } catch (e) {
-    // ignore and return empty description
+    // ignore
   }
   return '';
 }
 
+function getCategoryEmoji(category) {
+  const emojis = {
+    'admin': '👮',
+    'group': '👥',
+    'fun': '🎮',
+    'media': '🎬',
+    'social': '📱',
+    'download': '⬇️',
+    'utility': '⚙️',
+    'owner': '👑',
+    'auto': '🤖',
+    'ai': '🧠'
+  };
+  return emojis[category] || '📦';
+}
+
 function listCommandFiles() {
-  const commandsDir = __dirname; // this file is in commands/
+  const commandsDir = __dirname;
   let files = [];
   try {
     files = fs.readdirSync(commandsDir);
@@ -72,43 +94,72 @@ function listCommandFiles() {
     .map(name => {
       const fp = path.join(commandsDir, `${name}.js`);
       const desc = getCommandDescription(fp);
-      return { name, desc };
+      let category = 'other';
+      for (const [cat, cmds] of Object.entries(COMMAND_CATEGORIES)) {
+        if (cmds.includes(name)) {
+          category = cat;
+          break;
+        }
+      }
+      return { name, desc, category };
     });
   return cmds;
 }
 
 function buildHelpMessage(cmdList, opts = {}) {
+  const { runtime, mode, prefix, ramUsed, ramTotal, time, user, name } = opts;
+
+  // Group commands by category
+  const grouped = {};
+  for (const cat of Object.keys(COMMAND_CATEGORIES)) {
+    grouped[cat] = [];
+  }
+  grouped['other'] = [];
+
+  cmdList.forEach(cmd => {
+    if (grouped[cmd.category]) {
+      grouped[cmd.category].push(cmd);
+    } else {
+      grouped['other'].push(cmd);
+    }
+  });
+
+  const header = `╔═══════════════════════════════════════════\n` +
+    `║  💎 ${settings.botName || '𝙼𝚒𝚌𝚔𝚎𝚢 𝙶𝚕𝚒𝚝𝚌𝚑'} - COMMAND CENTER 💎\n` +
+    `╠═══════════════════════════════════════════\n` +
+    `║ 👑 Owner: ${settings.botOwner || 'Mickey'} | v${settings.version || '?.?'}\n` +
+    `║ 👤 User: ${name || user || 'Unknown'}\n` +
+    `║ ⏱ Uptime: ${runtime || getUptime()} | ⌚ ${time || new Date().toLocaleTimeString('en-GB', { hour12: false })}\n` +
+    `║ 🎛 Mode: ${mode || settings.commandMode || 'public'} | Prefix: *${prefix || '.' }*\n` +
+    `║ 💾 RAM: ${ramUsed || '?'} / ${ramTotal || '?'} GB\n` +
+    `╚═══════════════════════════════════════════\n\n`;
+
+  let content = header;
+
+  // Build categorized command list
+  for (const [category, cmds] of Object.entries(grouped)) {
+    if (cmds.length === 0) continue;
+    
+    const emoji = getCategoryEmoji(category);
+    const categoryTitle = category.charAt(0).toUpperCase() + category.slice(1);
+    content += `\n${emoji} *${categoryTitle}* [${cmds.length}]\n`;
+    content += `${'─'.repeat(40)}\n`;
+    
+    cmds.forEach(cmd => {
+      const nameStr = `${prefix}${cmd.name}`;
+      const descStr = cmd.desc ? ` ➜ ${cmd.desc}` : '';
+      content += `  • *${nameStr}*${descStr}\n`;
+    });
+  }
+
   const total = cmdList.length;
-  const {
-    runtime,
-    mode,
-    prefix,
-    ramUsed,
-    ramTotal,
-    time,
-    user,
-    name
-  } = opts;
+  content += `\n${'═'.repeat(45)}\n`;
+  content += `✨ *Total Commands:* ${total} | *Excluded:* ${EXCLUDE.length}\n`;
+  content += `📖 *Usage:* ${prefix}command [args]\n`;
+  content += `❓ *Need Help?* Reply with command name for details\n`;
+  content += `${'═'.repeat(45)}\n`;
 
-  const header = `┏━━〔 ${settings.botName || '𝙼𝚒𝚌𝚔𝚎𝚢 𝙶𝚕𝚒𝚝𝚌𝚑'} 〕━━┓\n` +
-    `┃ 👑 Owner : ${settings.botOwner || 'Mickey'}\n` +
-    `┃ ✨ User  : ${name || user || 'Unknown'}  |  🔖 v${settings.version || '?.?'}\n` +
-    `┃ ⏱ Uptime : ${runtime || getUptime()}  |  ⌚ ${time || new Date().toLocaleTimeString('en-GB', { hour12: false })}\n` +
-    `┃ 🛡 Mode  : ${mode || settings.commandMode || 'public'}  |  Prefix: ${prefix || settings.prefix || '.'}\n` +
-    `┃ 🧠 RAM   : ${ramUsed || '?'} / ${ramTotal || '?'} GB\n` +
-    `┗━━━━━━━━━━━━━━━━━━━━━━┛\n\n`;
-
-  const title = `*• Commands (${total})*\n\n`;
-
-  const list = cmdList.map(c => {
-    const nameStr = `${prefix}${c.name}`;
-    const descStr = c.desc ? ` — ${c.desc}` : '';
-    return `• ${nameStr}${descStr}`;
-  }).join('\n');
-
-  const footer = `\n\n*Total commands:* ${total}  —  *Excluded:* ${EXCLUDE.length}`;
-
-  return header + title + list + footer;
+  return content;
 } 
 
 const FALLBACK = `*Help*\nUnable to build dynamic help list.`;
