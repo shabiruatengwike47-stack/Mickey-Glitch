@@ -119,7 +119,7 @@ function buildHelpMessage(cmds, opts = {}) {
         (groups[cmd.category] || groups.other).push(cmd);
     });
 
-    let text = `🎯 *\( {settings.botName || 'Mickey Glitch'} Commands*  v \){settings.version || '?.?'}\n\n`;
+    let text = `🎯 *${settings.botName || 'Mickey Glitch'} Commands*  v ${settings.version || '?.?'}\n\n`;
 
     text += `▸ Uptime    : ${runtime}\n`;
     text += `▸ Mode      : ${mode}\n`;
@@ -134,11 +134,11 @@ function buildHelpMessage(cmds, opts = {}) {
         const emoji = emojiForCategory(cat);
         const title = cat.charAt(0).toUpperCase() + cat.slice(1);
 
-        text += `\( {emoji} * \){title}* (${list.length})\n`;
+        text += `${emoji} *${title}* (${list.length})\n`;
 
         list.forEach(cmd => {
             const desc = cmd.desc ? ` — ${cmd.desc}` : '';
-            text += `  • \( {prefix} \){cmd.name}${desc}\n`;
+            text += `  • ${prefix}${cmd.name}${desc}\n`;
         });
 
         text += '\n';
@@ -221,7 +221,7 @@ async function helpCommand(sock, chatId, msg) {
     } catch (err) {
         console.error("[help] error:", err);
         await sock.sendMessage(chatId, {
-            text: `Error generating help:\n\( {err.message || '?'}\n\n \){FALLBACK}`
+            text: `Error generating help:\n${err.message || '?'}\n\n${FALLBACK}`
         }, { quoted: msg });
     }
 }
