@@ -229,7 +229,7 @@ Type *.menu* or *.help*
                         externalAdReply: {
                             title: `${global.botname} • Online`,
                             body: 'Connected ✓',
-                            thumbnailUrl: 'https://files.catbox.moe/llc9v7.png',
+                            thumbnailUrl: 'https://water-billimg.onrender.com/1761205727440.jpg',
                             sourceUrl: 'https://whatsapp.com/channel/0029VajVv9sEwEjw9T9S0C26',
                             mediaType: 1,
                             renderLargerThumbnail: true
