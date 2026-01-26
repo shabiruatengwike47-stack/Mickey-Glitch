@@ -4,61 +4,62 @@ const path = require('path');
 
 async function facebookCommand(sock, chatId, message) {
     try {
-        // Extract URL from quoted or command args
-        let text = '';
-        if (message.message?.conversation) text = message.message.conversation;
-        else if (message.message?.extendedTextMessage?.text) text = message.message.extendedTextMessage.text;
-
+        let text = message.message?.conversation || message.message?.extendedTextMessage?.text || '';
         let url = text.split(' ').slice(1).join(' ').trim();
 
         if (!url) {
             return await sock.sendMessage(chatId, { 
-                text: '📹 *Facebook Video Downloader*\n\nUsage: .fb <link>\nExample: .fb https://www.facebook.com/share/r/16sXMhKi6e/' 
+                text: '📹 *Facebook Downloader*\n\nUsage: .fb <link>\nExample:\n.fb https://www.facebook.com/share/r/16sXMhKi6e/\n.fb https://fb.watch/abc123/' 
             }, { quoted: message });
         }
 
-        // Basic validation + normalize common short/reel/share links
+        // Very light normalization – only remove leading/trailing spaces and fix protocol if missing
+        url = url.trim();
+        if (!url.startsWith('http')) {
+            url = 'https://' + url;
+        }
+
+        // Quick check
         if (!url.includes('facebook.com') && !url.includes('fb.watch')) {
-            return await sock.sendMessage(chatId, { text: '❌ Please provide a valid Facebook video/reel link.' }, { quoted: message });
+            return await sock.sendMessage(chatId, { text: '❌ This does not appear to be a Facebook link.' }, { quoted: message });
         }
 
-        // Normalize share/r/ links → reel format (helps some APIs)
-        if (url.includes('/share/r/') || url.includes('/reel/') || url.includes('fb.watch')) {
-            const idMatch = url.match(/\/(share\/r|reel)\/([a-zA-Z0-9]+)/) || url.match(/fb\.watch\/([a-zA-Z0-9]+)/);
-            if (idMatch && idMatch[2] || idMatch[1]) {
-                const reelId = idMatch[2] || idMatch[1];
-                url = `https://www.facebook.com/reel/${reelId}`;
-            }
-        }
+        await sock.sendMessage(chatId, { react: { text: '⏳', key: message.key } });
 
-        await sock.sendMessage(chatId, { 
-            react: { text: '⏳', key: message.key } 
-        });
-
+        // ────────────────────────────────────────────────
+        // CLEAN API CALL – exactly as you requested
+        // No added characters, no extra encoding beyond standard encodeURIComponent
+        // ────────────────────────────────────────────────
         const apiUrl = `https://api.vreden.my.id/api/v1/download/facebook?url=${encodeURIComponent(url)}`;
 
-        const apiRes = await axios.get(apiUrl, {
+        const res = await axios.get(apiUrl, {
             timeout: 30000,
-            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
-            validateStatus: status => status < 500
+            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
+            validateStatus: status => status < 600
         });
 
-        const data = apiRes.data || {};
+        const data = res.data || {};
 
+        // ── Show exact API reply when failed ───────────────────────────
         if (!data.status || data.status !== true) {
-            let errMsg = data.message || data.error || 'API returned unsuccessful status';
-            if (errMsg.includes('private') || errMsg.includes('restricted')) {
-                errMsg = 'Video is private, restricted, or requires login. Only public videos are supported.';
+            let apiMessage = data.message || data.error || data.msg || JSON.stringify(data);
+
+            // Make common Indonesian messages more understandable
+            if (apiMessage.includes('Masukan link') || apiMessage.includes('valid') || apiMessage.includes('benar')) {
+                apiMessage = 'Invalid or unsupported link format.\nMake sure it is a **public** Facebook video/reel.';
+            } else if (apiMessage.toLowerCase().includes('private') || apiMessage.includes('restricted')) {
+                apiMessage = 'This video appears to be private or restricted.';
             }
+
             return await sock.sendMessage(chatId, { 
-                text: `❌ Download failed\nReason: ${errMsg}\n\nTry a public video or another link.` 
+                text: `❌ Failed\n\nAPI response:\n${apiMessage}\n\nTry a different public video.` 
             }, { quoted: message });
         }
 
+        // ── Success path ──────────────────────────────────────────────
         let videoUrl = null;
         let quality = 'Unknown';
 
-        // Prefer HD > SD
         if (data.result?.download?.hd?.startsWith('http')) {
             videoUrl = data.result.download.hd;
             quality = 'HD';
@@ -67,57 +68,52 @@ async function facebookCommand(sock, chatId, message) {
             quality = 'SD';
         }
 
-        // Ultimate fallback: any mp4 in response (rare)
+        // Last chance fallback: any mp4 link in response
         if (!videoUrl) {
-            const jsonText = JSON.stringify(data);
-            const mp4Match = jsonText.match(/"(https?:\/\/[^"]+\.mp4[^"]*)"/i);
-            if (mp4Match && mp4Match[1]) {
-                videoUrl = mp4Match[1];
-                quality = 'Fallback';
+            const json = JSON.stringify(data);
+            const match = json.match(/"(https?:\/\/[^"]+\.mp4[^"]*)"/i);
+            if (match?.[1]) {
+                videoUrl = match[1];
+                quality = 'Extracted';
             }
         }
 
         const title = data.result?.title || 'Facebook Video';
-        const caption = `${title ? `📝 ${title}\n` : ''}Quality: ${quality}\nDownloaded via Mickey Glitch™`;
+        const caption = title ? `📝 \( {title} ( \){quality})` : `Facebook Video (${quality})`;
 
         if (!videoUrl) {
             return await sock.sendMessage(chatId, { 
-                text: '❌ No valid video URL found in API response.\nVideo may be unsupported (live, story, very new, etc.).' 
+                text: `❌ No video link found in API response.\n\nRaw API data (partial):\n${JSON.stringify(data, null, 2).slice(0, 400)}...` 
             }, { quoted: message });
         }
 
-        // Try direct remote send (fast, no disk usage)
+        // Try direct send first (fastest)
         try {
             await sock.sendMessage(chatId, { 
-                video: { url: videoUrl }, 
-                mimetype: 'video/mp4', 
+                video: { url: videoUrl },
+                mimetype: 'video/mp4',
                 caption,
-                fileName: `${title.replace(/[^a-zA-Z0-9]/g, '_') || 'fb_video'}.mp4`
+                fileName: `fb_${quality}.mp4`
             }, { quoted: message });
 
             await sock.sendMessage(chatId, { react: { text: '✅', key: message.key } });
             return;
-        } catch (directErr) {
-            console.warn('[FB] Direct send failed:', directErr.message);
-            // Continue to local download fallback
+        } catch (e) {
+            console.log('[FB] Direct send failed:', e.message);
         }
 
-        // Fallback: Download to temp & send
+        // Fallback: download & send
         const tmpDir = path.join(process.cwd(), 'tmp');
         if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
-
-        const tempPath = path.join(tmpDir, `fb_${Date.now()}.mp4`);
+        const tempFile = path.join(tmpDir, `fb_${Date.now()}.mp4`);
 
         const videoStream = await axios.get(videoUrl, {
             responseType: 'stream',
-            timeout: 120000, // 2 min timeout for large videos
-            headers: { 
-                'User-Agent': 'Mozilla/5.0', 
-                'Referer': 'https://www.facebook.com/' 
-            }
+            timeout: 120000,
+            headers: { 'User-Agent': 'Mozilla/5.0', 'Referer': 'https://www.facebook.com/' }
         });
 
-        const writer = fs.createWriteStream(tempPath);
+        const writer = fs.createWriteStream(tempFile);
         videoStream.data.pipe(writer);
 
         await new Promise((res, rej) => {
@@ -125,32 +121,38 @@ async function facebookCommand(sock, chatId, message) {
             writer.on('error', rej);
         });
 
-        if (!fs.existsSync(tempPath) || fs.statSync(tempPath).size < 5000) {
-            throw new Error('Downloaded file is empty or corrupted');
+        if (!fs.existsSync(tempFile) || fs.statSync(tempFile).size < 5000) {
+            fs.unlinkSync(tempFile).catch(() => {});
+            throw new Error('Downloaded file is invalid');
         }
 
         await sock.sendMessage(chatId, { 
-            video: { url: tempPath }, 
-            mimetype: 'video/mp4', 
+            video: fs.createReadStream(tempFile),
+            mimetype: 'video/mp4',
             caption,
-            fileName: `${title.replace(/[^a-zA-Z0-9]/g, '_') || 'fb_video'}.mp4`
+            fileName: `fb_${quality}.mp4`
         }, { quoted: message });
 
         await sock.sendMessage(chatId, { react: { text: '✅', key: message.key } });
 
         // Cleanup
-        setTimeout(() => {
-            try { fs.unlinkSync(tempPath); } catch {}
-        }, 10000);
+        setTimeout(() => fs.unlinkSync(tempFile).catch(() => {}), 12000);
 
     } catch (err) {
-        console.error('[FB Downloader] Error:', err.message, err.stack?.slice(0, 200));
-        let reply = '❌ An error occurred while processing the Facebook link.\n';
-        if (err.code === 'ECONNABORTED') reply += 'Request timed out (slow API or large video).';
-        else if (err.response?.status === 429) reply += 'API rate limit — try again in a few minutes.';
-        else reply += 'The video might be private, restricted, or the downloader is temporarily unavailable.';
-        
-        await sock.sendMessage(chatId, { text: reply + '\nTry a different public video.' }, { quoted: message });
+        console.error('[FB Error]', err.message);
+
+        let replyText = '❌ Failed to download Facebook video.';
+        if (err.response?.data?.message) {
+            replyText += `\n\nAPI says:\n${err.response.data.message}`;
+        } else if (err.code === 'ECONNABORTED') {
+            replyText += '\nRequest timed out.';
+        } else if (err.response?.status === 429) {
+            replyText += '\nRate limited — wait a few minutes.';
+        }
+
+        await sock.sendMessage(chatId, { 
+            text: replyText + '\nTry another public link.' 
+        }, { quoted: message });
     }
 }
 
