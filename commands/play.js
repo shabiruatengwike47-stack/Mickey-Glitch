@@ -1,12 +1,20 @@
+/**
+ * Song command - Downloads audio directly from YouTube using @distube/ytdl-core
+ * Converts to MP3 using your ffmpeg-based toAudio function
+ * Sends as WhatsApp audio message
+ */
+
 const axios = require('axios');
 const yts = require('yt-search');
 const fs = require('fs');
 const path = require('path');
-const ytdl = require('@distube/ytdl-core');
-const { toAudio } = require('../lib/converter');
+const ytdl = require('@distube/ytdl-core'); // ← Install: npm i @distube/ytdl-core@latest
+
+// Your converter (copied exactly as provided)
+const { toAudio } = require('../lib/converter'); // assuming this exports { toAudio, ... }
 
 const AXIOS_DEFAULTS = {
-    timeout: 40000,
+    timeout: 30000,
     headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
         'Accept': '*/*',
@@ -14,76 +22,56 @@ const AXIOS_DEFAULTS = {
     }
 };
 
-async function tryRequest(getter, maxAttempts = 4) {
-    let lastError;
-    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-        try {
-            return await getter();
-        } catch (err) {
-            lastError = err;
-            const code = err?.response?.status || err?.code;
-            if ([400, 403, 404, 451].includes(code)) throw err; // permanent errors
-            if (code === 429 || ['ETIMEDOUT', 'ECONNABORTED', 'ECONNRESET'].includes(code)) {
-                const delay = attempt === 1 ? 4000 : 8000 * (attempt - 1);
-                console.log(`[Retry] ${code || 'unknown'} on attempt ${attempt} → wait ${delay/1000}s`);
-                await new Promise(r => setTimeout(r, delay));
-                continue;
-            }
-        }
+async function downloadAudioBuffer(youtubeUrl) {
+    console.log('[YTDL] Starting download for:', youtubeUrl);
+
+    const info = await ytdl.getInfo(youtubeUrl, {
+        requestOptions: { headers: AXIOS_DEFAULTS.headers }
+    });
+
+    const format = ytdl.chooseFormat(info.formats, {
+        filter: 'audioonly',
+        quality: 'highestaudio'
+    });
+
+    if (!format) {
+        throw new Error('No suitable audio format found');
     }
-    throw lastError || new Error('All attempts failed');
-}
 
-async function downloadAudioBufferFromYtdl(youtubeUrl) {
-    try {
-        console.log('[YTDL] Getting video info for:', youtubeUrl);
-        const info = await ytdl.getInfo(youtubeUrl, { requestOptions: { headers: AXIOS_DEFAULTS.headers } });
-        
-        const audioFormat = ytdl.chooseFormat(info.formats, {
-            quality: 'highestaudio',
-            filter: 'audioonly'
-        });
-        
-        if (!audioFormat) {
-            throw new Error('No audio format available');
-        }
+    console.log('[YTDL] Selected format:', format.mimeType, format.audioBitrate || 'unknown', 'kbps');
 
-        console.log('[YTDL] Selected format:', audioFormat.container, audioFormat.audioBitrate, 'kbps');
-
-        const audioStream = ytdl.downloadFromInfo(info, {
-            filter: 'audioonly',
-            quality: 'highestaudio'
+    return new Promise((resolve, reject) => {
+        const stream = ytdl.downloadFromInfo(info, {
+            format,
+            requestOptions: { headers: AXIOS_DEFAULTS.headers }
         });
 
         const chunks = [];
-        let received = 0;
+        let totalReceived = 0;
 
-        audioStream.on('data', chunk => {
+        stream.on('data', (chunk) => {
             chunks.push(chunk);
-            received += chunk.length;
-            if (received % (1024 * 1024) === 0) {
-                console.log(`[Progress] ${ (received / 1024 / 1024).toFixed(1) } MB`);
+            totalReceived += chunk.length;
+            if (totalReceived % (1024 * 1024) === 0) {
+                console.log(`[Progress] ${ (totalReceived / 1024 / 1024).toFixed(2) } MB`);
             }
         });
 
-        await new Promise((resolve, reject) => {
-            audioStream.on('end', resolve);
-            audioStream.on('error', err => reject(new Error(`Stream error: ${err.message}`)));
+        stream.on('end', () => {
+            const buffer = Buffer.concat(chunks);
+            console.log('[YTDL] Download finished:', (buffer.length / 1024 / 1024).toFixed(2), 'MB');
+            if (buffer.length < 32000) {
+                reject(new Error('Downloaded audio too small - likely failed'));
+            } else {
+                resolve({ buffer, container: format.container || 'webm' });
+            }
         });
 
-        const buffer = Buffer.concat(chunks);
-
-        if (buffer.length < 16000) {
-            throw new Error(`Downloaded audio too small (${buffer.length} bytes)`);
-        }
-
-        console.log('[YTDL] Download complete:', (buffer.length / 1024 / 1024).toFixed(2), 'MB');
-        return { buffer, container: audioFormat.container || 'webm' };
-
-    } catch (err) {
-        console.error('[YTDL] Error:', err.message);
-        throw err;
-    }
+        stream.on('error', (err) => {
+            console.error('[YTDL] Stream error:', err.message);
+            reject(err);
+        });
+    });
 }
 
 async function songCommand(sock, chatId, message) {
@@ -96,23 +84,27 @@ async function songCommand(sock, chatId, message) {
 
         let video;
         if (text.includes('youtube.com') || text.includes('youtu.be')) {
-            let url = text.startsWith('http') ? text : `https://${text}`;
+            let url = text;
+            if (!url.startsWith('http')) url = 'https://' + url;
             video = { url, title: 'YouTube Audio', timestamp: '—', thumbnail: '' };
         } else {
+            console.log('[Search] Query:', text);
             const search = await yts(text);
             if (!search?.videos?.length) {
-                await sock.sendMessage(chatId, { text: '❌ No results found.' }, { quoted: message });
+                await sock.sendMessage(chatId, { text: '❌ No results found for that song.' }, { quoted: message });
                 return;
             }
             video = search.videos[0];
+            console.log('[Search] Selected:', video.title, video.url);
         }
 
+        // Nice notification with thumbnail
         await sock.sendMessage(chatId, {
-            text: `🎵 Preparing *${video.title}*   ⏱ ${video.timestamp || '—'}`,
+            text: `🎵 Preparing: *${video.title}*\n⏱ Duration: ${video.timestamp || 'Unknown'}`,
             contextInfo: {
                 externalAdReply: {
                     title: video.title || 'Mickey Glitch Music',
-                    body: 'Downloading & processing audio...',
+                    body: 'Downloading audio... (may take 10–60s)',
                     thumbnailUrl: video.thumbnail,
                     sourceUrl: video.url || 'https://youtube.com',
                     mediaType: 1,
@@ -122,72 +114,77 @@ async function songCommand(sock, chatId, message) {
             }
         }, { quoted: message });
 
-        const { buffer: rawBuffer, container: fileExtension } = await downloadAudioBufferFromYtdl(video.url);
+        // 1. Download raw audio (usually webm/opus or m4a)
+        const { buffer: rawBuffer, container } = await downloadAudioBuffer(video.url);
 
-        // Basic signature check
+        // 2. Basic validation
         const head = rawBuffer.slice(0, 12);
-        const isLikelyAudio =
+        const looksLikeAudio =
             head.toString('ascii', 0, 3) === 'ID3' ||
             (head[0] === 0xFF && (head[1] & 0xE0) === 0xE0) ||
             head.toString('ascii', 0, 4) === 'OggS' ||
-            head.toString('ascii', 4, 8) === 'ftyp' ||
-            head.toString('ascii', 0, 4) === 'RIFF';
+            head.toString('ascii', 4, 8) === 'ftyp';
 
-        if (!isLikelyAudio) {
-            throw new Error('Downloaded content does not appear to be valid audio');
+        if (!looksLikeAudio) {
+            throw new Error('Downloaded content does not look like valid audio');
         }
 
-        // Convert to MP3 if needed
-        let finalBuffer = rawBuffer;
-        let finalMimetype = 'audio/mpeg';
-
-        if (fileExtension !== 'mp3') {
-            console.log(`[Convert] ${fileExtension.toUpperCase()} → MP3`);
-            finalBuffer = await toAudio(rawBuffer, fileExtension);
-            if (!finalBuffer || finalBuffer.length < 16000) {
-                throw new Error('Conversion failed - invalid output');
+        // 3. Convert to MP3 using your ffmpeg function
+        let finalBuffer;
+        if (container === 'mp3') {
+            console.log('[Convert] Already MP3 - skipping conversion');
+            finalBuffer = rawBuffer;
+        } else {
+            console.log(`[Convert] ${container.toUpperCase()} → MP3`);
+            finalBuffer = await toAudio(rawBuffer, container);
+            if (!finalBuffer || finalBuffer.length < 32000) {
+                throw new Error('Conversion returned empty or too small buffer');
             }
         }
 
-        // Send as audio
+        // 4. Send as audio message
+        const titleSafe = (video.title || 'song').replace(/[^a-z0-9 ]/gi, '_').substring(0, 60);
         await sock.sendMessage(chatId, {
             audio: finalBuffer,
-            mimetype: finalMimetype,
-            fileName: `${(video.title || 'song').replace(/[^a-z0-9]/gi, '_')}.mp3`,
-            ptt: false
+            mimetype: 'audio/mpeg',
+            fileName: `${titleSafe}.mp3`,
+            ptt: false // normal audio player, not voice note
         }, { quoted: message });
 
-        console.log('[Success] Audio file sent');
+        console.log('[Success] Audio sent');
 
-        // Cleanup temp files
+        // 5. Cleanup (your original logic)
         try {
             const tempDir = path.join(__dirname, '../temp');
             if (fs.existsSync(tempDir)) {
                 const now = Date.now();
                 fs.readdirSync(tempDir).forEach(file => {
                     const fp = path.join(tempDir, file);
-                    if (now - fs.statSync(fp).mtimeMs > 15000 &&
-                        (file.endsWith('.mp3') || file.endsWith('.m4a') || /^\d+\.(mp3|m4a)$/.test(file))) {
-                        fs.unlinkSync(fp);
-                    }
+                    try {
+                        const stats = fs.statSync(fp);
+                        if (now - stats.mtimeMs > 15000 &&
+                            (file.endsWith('.mp3') || file.endsWith('.m4a') || file.endsWith('.webm') || /^\d+\.(mp3|m4a|webm)$/.test(file))) {
+                            fs.unlinkSync(fp);
+                        }
+                    } catch {}
                 });
             }
         } catch (cleanupErr) {
-            console.log('[Cleanup] Ignored error:', cleanupErr.message);
+            console.log('[Cleanup] Ignored:', cleanupErr.message);
         }
 
     } catch (err) {
         console.error('[ERROR]', err.message || err);
 
-        let userMsg = '❌ Failed to process song.';
+        let userMsg = '❌ Failed to download or process song.';
         const msg = (err.message || '').toLowerCase();
 
-        if (msg.includes('timeout') || msg.includes('etimedout') || msg.includes('aborted') || msg.includes('connection') || msg.includes('incomplete')) {
-            userMsg = '❌ Download was slow or interrupted. Try again or choose a shorter song.';
-        } else if (msg.includes('corrupted') || msg.includes('small') || msg.includes('invalid') || msg.includes('conversion') || !msg.includes('audio')) {
-            userMsg = '❌ Audio file corrupted or invalid. Try a different song.';
-        } else if (msg.includes('no audio') || msg.includes('format')) {
-            userMsg = '❌ No suitable audio available for this video.';
+        if (msg.includes('no suitable') || msg.includes('format')) {
+            userMsg = '❌ No audio stream available for this video. Try another.';
+        } else if (msg.includes('timeout') || msg.includes('connection') || msg.includes('network')) {
+            userMsg = '❌ Connection was slow or interrupted. Try again later.';
+        } else if (msg.includes('corrupted') || msg.includes('small') || msg.includes('conversion')) {
+            userMsg = '❌ Audio processing failed. Try a different song.';
         }
 
         await sock.sendMessage(chatId, { text: userMsg }, { quoted: message });
