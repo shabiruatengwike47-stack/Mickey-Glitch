@@ -2,27 +2,39 @@ const axios = require('axios');
 const yts = require('yt-search');
 
 /**
- * Download audio using vreden API
+ * Download audio using PLAY url from vreden API
  */
 async function downloadAudio(query) {
-    const api = `https://api.vreden.my.id/api/v1/download/play/audio?query=${encodeURIComponent(query)}`;
+    const apiUrl = `https://api.vreden.my.id/api/v1/download/play/audio?query=${encodeURIComponent(query)}`;
 
-    const { data } = await axios.get(api, { timeout: 60000 });
+    const { data } = await axios.get(apiUrl, { timeout: 60000 });
 
-    if (!data || !data.result || !data.result.download) {
-        throw new Error('Invalid API response');
+    if (!data || !data.result || !data.result.play) {
+        throw new Error('Invalid API response (no play url)');
     }
 
-    const audioUrl = data.result.download;
+    const {
+        play,
+        title = 'audio'
+    } = data.result;
 
-    const audioRes = await axios.get(audioUrl, {
+    // Download audio from PLAY url
+    const audioRes = await axios.get(play, {
         responseType: 'arraybuffer',
-        timeout: 60000
+        timeout: 60000,
+        headers: {
+            'User-Agent': 'Mozilla/5.0',
+            'Accept': '*/*'
+        }
     });
+
+    if (!audioRes.data || audioRes.data.byteLength < 30000) {
+        throw new Error('Audio stream too small or empty');
+    }
 
     return {
         buffer: Buffer.from(audioRes.data),
-        title: data.result.title || 'audio'
+        title
     };
 }
 
@@ -44,36 +56,27 @@ async function songCommand(sock, chatId, message) {
             );
         }
 
-        let title = text;
-        let thumbnail;
-
-        // Search only for preview (optional)
+        // Optional preview (search only)
+        let preview;
         if (!text.includes('youtube.com') && !text.includes('youtu.be')) {
             const search = await yts(text);
-            if (search.videos.length) {
-                title = search.videos[0].title;
-                thumbnail = search.videos[0].thumbnail;
-            }
+            if (search.videos.length) preview = search.videos[0];
         }
 
         // Preview message
         await sock.sendMessage(
             chatId,
             {
-                image: thumbnail ? { url: thumbnail } : undefined,
-                caption: `🎵 *${title}*\n\nDownloading audio…`
+                image: preview?.thumbnail ? { url: preview.thumbnail } : undefined,
+                caption: `🎵 *${preview?.title || text}*\n\nDownloading audio…`
             },
             { quoted: message }
         );
 
-        // Download audio
-        const { buffer, title: apiTitle } = await downloadAudio(text);
+        // Download using PLAY url
+        const { buffer, title } = await downloadAudio(text);
 
-        if (!buffer || buffer.length < 30000) {
-            throw new Error('Audio too small or empty');
-        }
-
-        const safeTitle = (apiTitle || title)
+        const safeTitle = (title || 'audio')
             .replace(/[^a-z0-9 ]/gi, '_')
             .slice(0, 60);
 
@@ -98,8 +101,8 @@ async function songCommand(sock, chatId, message) {
 
         if (e.includes('timeout')) {
             msg = '❌ Server timeout. Try again.';
-        } else if (e.includes('invalid')) {
-            msg = '❌ Download service error.';
+        } else if (e.includes('play')) {
+            msg = '❌ Audio stream unavailable.';
         }
 
         await sock.sendMessage(chatId, { text: msg }, { quoted: message });
