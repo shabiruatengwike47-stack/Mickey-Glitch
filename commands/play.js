@@ -12,6 +12,12 @@ const AXIOS_DEFAULTS = {
 	}
 };
 
+/**
+ * Retry request with exponential backoff
+ * @param {Function} getter - Function that returns a promise
+ * @param {Number} attempts - Number of retry attempts
+ * @returns {Promise}
+ */
 async function tryRequest(getter, attempts = 3) {
 	let lastError;
 	for (let attempt = 1; attempt <= attempts; attempt++) {
@@ -27,31 +33,116 @@ async function tryRequest(getter, attempts = 3) {
 	throw lastError;
 }
 
-async function getYupraDownloadByUrl(youtubeUrl) {
-	const apiUrl = `https://api.srihub.store/download/ytmp3?url=${encodeURIComponent(youtubeUrl)}`;
-	const res = await tryRequest(() => axios.get(apiUrl, AXIOS_DEFAULTS));
-	if (res?.data?.success && res?.data?.data?.download_url) {
+/**
+ * Convert query or link to YouTube URL using yt-search
+ * @param {String} query - Song name or YouTube URL
+ * @returns {Promise<Object>} Video object with url, title, thumbnail, timestamp
+ */
+async function convertQueryToYoutubeLink(query) {
+	try {
+		// If already a YouTube link, validate and return
+		if (query.includes('youtube.com') || query.includes('youtu.be')) {
+			return { url: query };
+		}
+
+		// Search for the query
+		console.log('[Play] Searching for:', query);
+		const search = await yts(query);
+		
+		if (!search || !search.videos || search.videos.length === 0) {
+			throw new Error('No YouTube videos found for: ' + query);
+		}
+
+		const video = search.videos[0];
+		console.log('[Play] Found:', video.title, 'URL:', video.url);
+		
 		return {
-			download: res.data.data.download_url,
-			title: res.data.data.title,
-			thumbnail: res.data.data.thumbnail
+			url: video.url,
+			title: video.title,
+			thumbnail: video.thumbnail,
+			timestamp: video.timestamp,
+			author: video.author?.name || 'Unknown'
 		};
+	} catch (err) {
+		console.error('[Play] Query to link conversion failed:', err?.message);
+		throw new Error('Failed to find YouTube video: ' + err?.message);
 	}
-	throw new Error('Yupra returned no download');
 }
 
-async function getOkatsuDownloadByUrl(youtubeUrl) {
-	const apiUrl = `https://api.yupra.my.id/api/downloader/ytmp3?url=${encodeURIComponent(youtubeUrl)}`;
-	const res = await tryRequest(() => axios.get(apiUrl, AXIOS_DEFAULTS));
-	// Okatsu response shape: { status, creator, title, format, thumb, duration, cached, dl }
-	if (res?.data?.dl) {
-		return {
-			download: res.data.dl,
-			title: res.data.title,
-			thumbnail: res.data.thumb
-		};
+/**
+ * Get download link from Yupra API
+ * @param {String} youtubeUrl - YouTube URL
+ * @returns {Promise<Object>} Download data with url, title, thumbnail
+ */
+async function getYupraDownloadByUrl(youtubeUrl) {
+	try {
+		const apiUrl = `https://api.srihub.store/download/ytmp3?url=${encodeURIComponent(youtubeUrl)}`;
+		console.log('[Play] Calling Yupra API...');
+		const res = await tryRequest(() => axios.get(apiUrl, AXIOS_DEFAULTS));
+		
+		if (res?.data?.success && res?.data?.data?.download_url) {
+			return {
+				download: res.data.data.download_url,
+				title: res.data.data.title,
+				thumbnail: res.data.data.thumbnail
+			};
+		}
+		throw new Error('Yupra returned no download URL');
+	} catch (err) {
+		console.error('[Play] Yupra API error:', err?.message);
+		throw err;
 	}
-	throw new Error('Okatsu ytmp3 returned no download');
+}
+
+/**
+ * Get download link from Okatsu API (fallback)
+ * @param {String} youtubeUrl - YouTube URL
+ * @returns {Promise<Object>} Download data with url, title, thumbnail
+ */
+async function getOkatsuDownloadByUrl(youtubeUrl) {
+	try {
+		const apiUrl = `https://api.yupra.my.id/api/downloader/ytmp3?url=${encodeURIComponent(youtubeUrl)}`;
+		console.log('[Play] Calling Okatsu API...');
+		const res = await tryRequest(() => axios.get(apiUrl, AXIOS_DEFAULTS));
+		
+		if (res?.data?.dl) {
+			return {
+				download: res.data.dl,
+				title: res.data.title,
+				thumbnail: res.data.thumb
+			};
+		}
+		throw new Error('Okatsu returned no download URL');
+	} catch (err) {
+		console.error('[Play] Okatsu API error:', err?.message);
+		throw err;
+	}
+}
+
+/**
+ * Get audio download from either API with fallback
+ * @param {String} youtubeUrl - YouTube URL
+ * @returns {Promise<Object>} Audio data with download URL, title, thumbnail
+ */
+async function getAudioDownloadLink(youtubeUrl) {
+	let yupraError, okatsuError;
+	
+	// Try Yupra first
+	try {
+		return await getYupraDownloadByUrl(youtubeUrl);
+	} catch (err) {
+		yupraError = err?.message;
+		console.log('[Play] Yupra failed, trying Okatsu...');
+	}
+
+	// Try Okatsu fallback
+	try {
+		return await getOkatsuDownloadByUrl(youtubeUrl);
+	} catch (err) {
+		okatsuError = err?.message;
+	}
+
+	throw new Error(`All download APIs failed - Yupra: ${yupraError}, Okatsu: ${okatsuError}`);
 }
 
 async function songCommand(sock, chatId, message) {
