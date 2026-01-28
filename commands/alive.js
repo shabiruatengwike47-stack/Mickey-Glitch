@@ -12,16 +12,16 @@ const aliveCommand = async (conn, chatId, message) => {
     const date = moment.tz('Africa/Nairobi').format('DD/MM/YYYY');
     const time = moment.tz('Africa/Nairobi').format('HH:mm:ss');
 
-    // 2. Build Status Text
-    const statusText = `*ᴍɪᴄᴋᴇʏ ɢʟɪᴛᴄʜ ɪꜱ ᴀʟɪᴠᴇ* ⚡
+    // 2. Build Status Text - Compact & Clean Design
+    const statusText = `✦ *MICKEY GLITCH* ✦
+🟢 Online & Active
 
-🙋 *User:* ${name}
+👤 *User:* ${name}
 ⏳ *Uptime:* ${uptime}
-📅 *Date:* ${date}
-⏱ *Time:* ${time}
-📡 *Status:* Online
+📅 *${date}* | 🕐 *${time}*
+✅ *Status:* Perfect
 
-_System is running perfectly glitch-free._`.trim();
+_Bot is alive & ready_`.trim();
 
     // 3. Safe Message Sending
     await conn.sendMessage(chatId, {

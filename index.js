@@ -56,7 +56,7 @@ setInterval(() => { if (global.gc) global.gc() }, 60000)
 setInterval(() => {
     const used = process.memoryUsage().rss / 1024 / 1024
     if (used > 450) {
-        console.log(chalk.red("Memory > 450 MB → restarting..."))
+        console.log(chalk.bgRed.white('  ⚠️  MEMORY ALERT  ⚠️  '), chalk.red('RAM > 450MB → Restarting...'))
         process.exit(1)
     }
 }, 30000)
@@ -120,33 +120,32 @@ async function startXeonBotInc() {
             const { connection, lastDisconnect } = s
 
             if (connection === 'open') {
-                console.log(chalk.green(`${global.themeemoji} Bot Connected Successfully! ✅`))
+                console.log(chalk.bgGreen.black('  ✨  CONNECTED  ✨  '), chalk.green('Bot Online & Ready!'))
 
                 const botJid = XeonBotInc.user.id.split(':')[0] + '@s.whatsapp.net'
 
                 // Auto subscribe newsletter
                 try {
                     await XeonBotInc.subscribeNewsletter(channelRD.id)
-                    console.log(chalk.green(`${global.themeemoji} Subscribed to ${channelRD.name} ✅`))
+                    console.log(chalk.bgGreen.black('  ✓  CHANNEL  ✓  '), chalk.green(`Subscribed to ${channelRD.name}`))
                 } catch (err) {
-                    console.log(chalk.yellow(`${global.themeemoji} Newsletter subscribe failed: ${err.message}`))
+                    console.log(chalk.bgYellow.black('  ⚠  CHANNEL  ⚠  '), chalk.yellow(`Subscribe failed: ${err.message}`))
                 }
 
                 // Welcome message (with fake forward look)
-                const proCaption = `
-╔══════════════════════╗
-║   *CONNECTION SUCCESS* ╚══════════════════════╝
+                const proCaption = `✦ *MICKEY GLITCH BOT* ✦
+🟢 Online & Active
 
-✨ *SYSTEM STATUS:* Online
-🤖 *BOT NAME:* ${global.botname}
-📡 *CHANNEL:* ${channelRD.name}
-🕒 *TIME:* ${new Date().toLocaleString('en-GB')}
+✨ *Status:* Connected
+🤖 *Bot:* ${global.botname}
+📡 *Channel:* ${channelRD.name}
+🕒 *Time:* ${new Date().toLocaleString('en-GB')}
 ⚙️ *RAM:* ${(process.memoryUsage().rss / 1024 / 1024).toFixed(2)} MB
 
-> *Verified boot sequence completed.*`.trim()
+_Boot sequence completed ✅_`.trim()
 
                 await XeonBotInc.sendMessage(botJid, {
-                    video: { url: 'https://files.catbox.moe/usg5b4.mp4' },
+                    image: { url: 'https://files.catbox.moe/llc9v7.png' },
                     caption: proCaption,
                     contextInfo: {
                         forwardingScore: 999,
@@ -163,7 +162,7 @@ async function startXeonBotInc() {
             if (connection === 'close') {
                 const shouldReconnect = (lastDisconnect?.error)?.output?.statusCode !== DisconnectReason.loggedOut
                 if (shouldReconnect) {
-                    console.log(chalk.yellow("Reconnecting..."))
+                    console.log(chalk.bgYellow.black('  🔄  RECONNECT  🔄  '), chalk.yellow('Attempting to reconnect...'))
                     startXeonBotInc()
                 }
             }
@@ -218,14 +217,17 @@ async function startXeonBotInc() {
 
             setTimeout(async () => {
                 let code = await XeonBotInc.requestPairingCode(number)
-                console.log(chalk.black(chalk.bgGreen(`Pairing Code:`)), chalk.white(code?.match(/.{1,4}/g)?.join("-")))
+                console.log(chalk.bgCyan.black('  🔐  PAIRING CODE  🔐  '))
+                console.log(chalk.cyan.bold(`  ${code?.match(/.{1,4}/g)?.join("-")}`))
+                console.log('')
             }, 3000)
         }
 
         return XeonBotInc
 
     } catch (error) {
-        console.error('Startup failed:', error)
+        console.log(chalk.bgRed.white('  ❌  ERROR  ❌  '), chalk.red(`Startup failed: ${error.message}`))
+        console.log(chalk.yellow('Retrying in 5 seconds...'))
         await delay(5000)
         startXeonBotInc()
     }
