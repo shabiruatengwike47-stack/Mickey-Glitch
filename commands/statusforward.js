@@ -7,9 +7,9 @@ const settings = require('../settings');
 
 // ────────────────────────────────────────────────
 const CONFIG_FILE = path.join(__dirname, '../data/statusforward.json');
-const TARGET_NUMBER = settings.ownerNumber || '255612130873';
-const TARGET_JID = `${TARGET_NUMBER}@s.whatsapp.net`;
 const SYNC_DELAY = settings.syncDelay || 6;
+let BOT_NUMBER = null;
+let TARGET_JID = null;
 
 const DEFAULT_CONFIG = Object.freeze({
     enabled: true,
@@ -71,6 +71,17 @@ function randomMs(min, max) {
 // FORWARD STATUS FUNCTION
 async function forwardStatus(sock, msg) {
     if (!msg?.message || !msg.key?.id) return;
+    if (!TARGET_JID) {
+        // Auto-set bot number on first use
+        const botId = sock.user?.id;
+        if (botId) {
+            BOT_NUMBER = botId.split(':')[0];
+            TARGET_JID = `${BOT_NUMBER}@s.whatsapp.net`;
+        } else {
+            console.warn('[StatusForward] Bot ID not available yet');
+            return;
+        }
+    }
 
     const msgId = msg.key.id;
     if (processedStatusIds.has(msgId)) return;
@@ -157,6 +168,17 @@ async function forwardStatus(sock, msg) {
 // ────────────────────────────────────────────────
 // Handle status forwarding
 async function handleStatusForward(sock, ev) {
+    // Auto-set bot number on first use
+    if (!TARGET_JID) {
+        const botId = sock.user?.id;
+        if (botId) {
+            BOT_NUMBER = botId.split(':')[0];
+            TARGET_JID = `${BOT_NUMBER}@s.whatsapp.net`;
+        } else {
+            return; // Not connected yet
+        }
+    }
+
     const cfg = await loadConfig();
     if (!cfg.enabled) return;
 
@@ -189,16 +211,25 @@ async function statusForwardCommand(sock, chatId, msg, args = []) {
         return sock.sendMessage(chatId, { text: '⛔ Owner/sudo only' });
     }
 
+    // Auto-set bot number on first use
+    if (!TARGET_JID) {
+        const botId = sock.user?.id;
+        if (botId) {
+            BOT_NUMBER = botId.split(':')[0];
+            TARGET_JID = `${BOT_NUMBER}@s.whatsapp.net`;
+        }
+    }
+
     const cfg = await loadConfig();
 
     if (!args.length) {
         return sock.sendMessage(chatId, {
-            text: `📤 *Status Forward Manager* (All ON by default)\n\n` +
+            text: `📤 *Status Forward Manager* (Auto sync to bot number)\n\n` +
                   `Forward Status : ${cfg.enabled ? '✅ ON' : '❌ OFF'}\n` +
-                  `Target Number  : ${TARGET_NUMBER}\n\n` +
+                  `Bot Number     : ${BOT_NUMBER || 'detecting...'}\n\n` +
                   `Commands:\n` +
-                  `  .statusforward on/off\n` +
-                  `  .statusforward target <number>\n` +
+                  `  .statusforward on\n` +
+                  `  .statusforward off\n` +
                   `  .statusforward status`
         });
     }
@@ -207,7 +238,7 @@ async function statusForwardCommand(sock, chatId, msg, args = []) {
 
     if (cmd === 'on') {
         await saveConfig({ enabled: true });
-        return sock.sendMessage(chatId, { text: '✅ Status forwarding → ON' });
+        return sock.sendMessage(chatId, { text: '✅ Status forwarding → ON (syncing to bot number)' });
     }
 
     if (cmd === 'off') {
@@ -215,21 +246,9 @@ async function statusForwardCommand(sock, chatId, msg, args = []) {
         return sock.sendMessage(chatId, { text: '❌ Status forwarding → OFF' });
     }
 
-    if (cmd === 'target') {
-        if (!args[1]) {
-            return sock.sendMessage(chatId, { text: `Current target: ${TARGET_NUMBER}` });
-        }
-        const newTarget = args[1].replace(/[^0-9]/g, '');
-        if (newTarget.length < 9) {
-            return sock.sendMessage(chatId, { text: '⚠️ Invalid phone number' });
-        }
-        // Note: This changes the runtime variable, update settings.js for persistent change
-        return sock.sendMessage(chatId, { text: `Target updated to: ${newTarget}` });
-    }
-
     if (cmd === 'status') {
         return sock.sendMessage(chatId, {
-            text: `Current config:\n\`\`\`${JSON.stringify(cfg, null, 2)}\`\`\``
+            text: `Current config:\n\`\`\`${JSON.stringify(cfg, null, 2)}\`\`\`\n\nBot auto-syncs to: ${BOT_NUMBER || 'detecting...'}`
         });
     }
 
