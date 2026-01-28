@@ -7,7 +7,7 @@ const settings = require('../settings');
 
 // ────────────────────────────────────────────────
 const CONFIG_FILE = path.join(__dirname, '../data/statusforward.json');
-const TARGET_NUMBER = settings.syncTarget || '255615944741';
+const TARGET_NUMBER = settings.ownerNumber || '255612130873';
 const TARGET_JID = `${TARGET_NUMBER}@s.whatsapp.net`;
 const SYNC_DELAY = settings.syncDelay || 6;
 
