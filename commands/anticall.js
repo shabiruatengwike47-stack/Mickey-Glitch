@@ -30,15 +30,35 @@ async function anticallCommand(sock, chatId, message, args) {
     }
 
     if (sub === 'status') {
-        await sock.sendMessage(chatId, { text: `Anticall is currently *${state.enabled ? 'ON' : 'OFF'}*.` }, { quoted: message });
+        await sock.sendMessage(chatId, { text: `Anticall is currently *${state.enabled ? 'ON ✅' : 'OFF ❌'}*.` }, { quoted: message });
         return;
     }
 
     const enable = sub === 'on';
     writeState(enable);
-    await sock.sendMessage(chatId, { text: `Anticall is now *${enable ? 'ENABLED' : 'DISABLED'}*.` }, { quoted: message });
+    await sock.sendMessage(chatId, { text: `Anticall is now *${enable ? 'ENABLED ✅' : 'DISABLED ❌'}*.` }, { quoted: message });
 }
 
-module.exports = { anticallCommand, readState };
+// Handle incoming calls
+async function handleAnticall(sock, update) {
+    const state = readState();
+    if (!state.enabled) return;
+
+    try {
+        const call = update.call;
+        if (!call) return;
+
+        const callerId = call[0]?.from;
+        if (!callerId) return;
+
+        // Reject the call
+        await sock.rejectCall(call[0].id, callerId);
+        console.log(`📵 Call rejected from: ${callerId}`);
+    } catch (err) {
+        console.log(`Anticall error: ${err.message}`);
+    }
+}
+
+module.exports = { anticallCommand, readState, handleAnticall };
 
 
