@@ -182,15 +182,8 @@ async function helpCommand(sock, chatId, message) {
       if (sender) {
         senderJid = typeof sender === 'string' ? sender : String(sender);
         userId = senderJid.split('@')[0];
-        try {
-          if (typeof sock.getName === 'function') {
-            displayName = await sock.getName(senderJid);
-          } else {
-            displayName = userId;
-          }
-        } catch (e) {
-          displayName = userId;
-        }
+        // First try to get pushName (the actual saved contact name)
+        displayName = message?.pushName || userId;
       }
     } catch (e) {}
 
