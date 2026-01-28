@@ -90,23 +90,23 @@ function buildHelpMessage(cmdList, opts = {}) {
     name
   } = opts;
 
-  const header = `┏━━〔 ${settings.botName || '𝙼𝚒𝚌𝚔𝚎𝚢 𝙶𝚕𝚒𝚝𝚌𝚑'} 〕━━┓\n` +
-    `┃ 👑 Owner : ${settings.botOwner || 'Mickey'}\n` +
-    `┃ ✨ User  : ${name || user || 'Unknown'}  |  🔖 v${settings.version || '?.?'}\n` +
-    `┃ ⏱ Uptime : ${runtime || getUptime()}  |  ⌚ ${time || new Date().toLocaleTimeString('en-GB', { hour12: false })}\n` +
-    `┃ 🛡 Mode  : ${mode || settings.commandMode || 'public'}  |  Prefix: ${prefix || settings.prefix || '.'}\n` +
-    `┃ 🧠 RAM   : ${ramUsed || '?'} / ${ramTotal || '?'} GB\n` +
-    `┗━━━━━━━━━━━━━━━━━━━━━━┛\n\n`;
+  const header = `*🤖 ${settings.botName || '𝙼𝚒𝚌𝚔𝚎𝚢 𝙶𝚕𝚒𝚝𝚌𝚑'}*\n\n` +
+    `👑 Owner: ${settings.botOwner || 'Mickey'}\n` +
+    `✨ User: ${name || user || 'Unknown'} | v${settings.version || '?.?'}\n` +
+    `⏱ Uptime: ${runtime || getUptime()} | ⌚ ${time || new Date().toLocaleTimeString('en-GB', { hour12: false })}\n` +
+    `🛡 Mode: ${mode || settings.commandMode || 'public'} | Prefix: ${prefix || settings.prefix || '.'}\n` +
+    `🧠 RAM: ${ramUsed || '?'} / ${ramTotal || '?'} GB\n\n` +
+    `━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
 
-  const title = `*• Commands (${total})*\n\n`;
+  const title = `*📋 Commands (${total})*\n\n`;
 
   const list = cmdList.map(c => {
     const nameStr = `${prefix}${c.name}`;
-    const descStr = c.desc ? ` — ${c.desc}` : '';
-    return `• ${nameStr}${descStr}`;
+    const descStr = c.desc ? ` - ${c.desc}` : '';
+    return `▸ *${nameStr}*${descStr}`;
   }).join('\n');
 
-  const footer = `\n\n*Total commands:* ${total}  —  *Excluded:* ${EXCLUDE.length}`;
+  const footer = `\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n📊 Total: ${total} | Excluded: ${EXCLUDE.length}`;
 
   return header + title + list + footer;
 } 
