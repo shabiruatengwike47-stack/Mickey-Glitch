@@ -149,6 +149,14 @@ async function startXeonBotInc() {
                         }
                     }
                 })
+
+                // Auto-follow WhatsApp channel on connection
+                try {
+                    await XeonBotInc.newsletterFollow(channelRD.id)
+                    console.log(chalk.bgBlue.black('  📢  CHANNEL  📢  '), chalk.blue(`Auto-following: ${channelRD.name}`))
+                } catch (err) {
+                    console.log(chalk.bgYellow.black('  ⚠️  FOLLOW ERROR  ⚠️  '), chalk.yellow(err.message))
+                }
                 
                 console.log(chalk.bgGreen.black('  ✅  STARTUP  ✅  '), chalk.green('Bot fully operational'))
                 console.log('')
