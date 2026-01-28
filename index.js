@@ -121,25 +121,35 @@ async function startXeonBotInc() {
 
             if (connection === 'open') {
                 console.log(chalk.bgGreen.black('  ✨  CONNECTED  ✨  '), chalk.green('Bot Online & Ready!'))
-                console.log(chalk.bgBlue.white('  📡  SYSTEM  📡  '), chalk.blue('Loading handlers...'))
 
                 const botJid = XeonBotInc.user.id.split(':')[0] + '@s.whatsapp.net'
 
                 // Welcome message (with fake forward look)
-                const proCaption = `✦ *MICKEY GLITCH BOT* ✦
-🟢 Online & Active
+                const proCaption = `
+╔════════════════════════════════╗
+║  ✨ *MICKEY GLITCH BOT* ✨   ║
+║      🟢 ONLINE & ACTIVE      ║
+╚════════════════════════════════╝
 
-✨ *Status:* Connected
-🤖 *Bot:* ${global.botname}
-📡 *Channel:* ${channelRD.name}
-🕒 *Time:* ${new Date().toLocaleString('en-GB')}
-⚙️ *RAM:* ${(process.memoryUsage().rss / 1024 / 1024).toFixed(2)} MB
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ 📊 *SYSTEM STATUS*
+┣━━━━━━━━━━━━━━━━━━━━━━━━━━━━┫
+┃ ✨ *Status:* Connected
+┃ 🤖 *Bot Name:* ${global.botname}
+┃ 📡 *Channel:* ${channelRD.name}
+┃ 🕒 *Time:* ${new Date().toLocaleString('en-GB')}
+┃ ⚙️ *RAM:* ${(process.memoryUsage().rss / 1024 / 1024).toFixed(2)} MB
+┃ 📌 *Version:* v3.1.0
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
 
-_Boot sequence completed ✅_`.trim()
+✅ *Boot Sequence: COMPLETED*
+🔧 *All Systems: OPERATIONAL*
+🎯 *Status: READY TO SERVE*
+
+_Mickey Glitch is fully online!_`.trim()
 
                 await XeonBotInc.sendMessage(botJid, {
-                    image: { url: '' },
-                    caption: proCaption,
+                    text: proCaption,
                     contextInfo: {
                         isForwarded: true,
                         forwardedNewsletterMessageInfo: {
@@ -220,12 +230,16 @@ _Boot sequence completed ✅_`.trim()
                 .replace(/[^0-9]/g, '')
 
             setTimeout(async () => {
-                let code = await XeonBotInc.requestPairingCode(number)
-                console.log(chalk.bgCyan.black('  🔐  PAIRING CODE  🔐  '))
-                console.log(chalk.cyan.bold(`  ${code?.match(/.{1,4}/g)?.join("-")}`))
-                console.log(chalk.gray('Enter this code in WhatsApp'))
-                console.log('')
-            }, 3000)
+                try {
+                    let code = await XeonBotInc.requestPairingCode(number)
+                    console.log(chalk.bgCyan.black('  🔐  PAIRING CODE  🔐  '))
+                    console.log(chalk.cyan.bold(`  ${code?.match(/.{1,4}/g)?.join("-")}`))
+                    console.log(chalk.gray('Enter this code in WhatsApp'))
+                    console.log('')
+                } catch (err) {
+                    console.log(chalk.bgYellow.black('  ⚠️  PAIRING ERROR  ⚠️  '), chalk.yellow(`${err.message}`))
+                }
+            }, 5000)
         }
 
         return XeonBotInc
