@@ -1,5 +1,6 @@
+// help.js
 // ──────────────────────────────────────────────────────────────
-//  Help Command – Auto-generated from commands/ folder + TTS greeting
+//  Help – Auto-generated command list + TTS greeting
 // ──────────────────────────────────────────────────────────────
 
 const fs = require('fs');
@@ -8,38 +9,43 @@ const os = require('os');
 const settings = require('../settings');
 const gTTS = require('gtts');
 
-const EXCLUDE = ['help']; // add more command names to hide if needed
+const EXCLUDE = ['help']; // ← add more command names here to hide them
 const BANNER = 'https://water-billimg.onrender.com/1761205727440.png';
 
-const FALLBACK = `*Help*\nUnable to build dynamic command list.`;
+const FALLBACK_MSG = `*Help*\nUnable to generate dynamic command list at the moment.`;
 
 /**
- * Get the most appropriate name for greeting / display
+ * Best-effort friendly name for greeting & header
  * Priority: contact name → pushName → phone number
  */
 async function getBestDisplayName(sock, message) {
   try {
-    let jid = message?.key?.participant || message?.key?.from || message?.key?.remoteJid;
+    const jid =
+      message?.key?.participant ||
+      message?.key?.from ||
+      message?.key?.remoteJid ||
+      '';
+
     if (!jid) return 'friend';
 
-    // Try to get real contact name (most reliable when store is enabled)
-    if (sock?.getContact) {
+    // Try real contact name if store / getContact is available
+    if (typeof sock?.getContact === 'function') {
       try {
         const contact = await sock.getContact(jid);
         if (contact?.name || contact?.verifiedName || contact?.notify) {
           return (contact.name || contact.verifiedName || contact.notify).trim();
         }
-      } catch (_) {
-        // silent fallback if getContact not available or fails
+      } catch {
+        // silent
       }
     }
 
-    // Fallback 1: WhatsApp display name (pushName)
+    // WhatsApp display name
     if (message?.pushName?.trim()) {
       return message.pushName.trim();
     }
 
-    // Fallback 2: just the phone number
+    // Phone number fallback
     return jid.split('@')[0] || 'someone';
   } catch {
     return 'friend';
@@ -47,16 +53,16 @@ async function getBestDisplayName(sock, message) {
 }
 
 function getUptime() {
-  const u = process.uptime();
-  const h = Math.floor(u / 3600);
-  const m = Math.floor((u % 3600) / 60);
-  const s = Math.floor(u % 60);
+  const sec = process.uptime();
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  const s = Math.floor(sec % 60);
   return `${h}h ${m}m ${s}s`;
 }
 
-function readMessageText(message) {
-  if (!message?.message) return '';
-  const m = message.message;
+function readMessageText(msg) {
+  if (!msg?.message) return '';
+  const m = msg.message;
   return (
     m.conversation ||
     m.extendedTextMessage?.text ||
@@ -66,40 +72,43 @@ function readMessageText(message) {
   ).trim();
 }
 
-function getCommandDescription(filePath) {
+function getCommandDescription(filepath) {
   try {
-    const content = fs.readFileSync(filePath, 'utf8');
-    const lines = content.split(/\r?\n/).slice(0, 10);
+    const content = fs.readFileSync(filepath, 'utf8');
+    const lines = content.split(/\r?\n/).slice(0, 12);
     for (const line of lines) {
       const t = line.trim();
       if (!t) continue;
       if (t.startsWith('//')) return t.replace(/^\/\/\s*/, '').trim();
-      if (t.startsWith('/*')) return t.replace(/^\/\*\s?/, '').replace(/\*\/$/, '').trim();
-      if (t.startsWith('*')) return t.replace(/^\*\s?/, '').trim();
+      if (t.startsWith('/*')) return t.replace(/^\/\*\s*/, '').replace(/\*\/$/, '').trim();
+      if (t.startsWith('*')) return t.replace(/^\*\s*/, '').trim();
     }
   } catch {}
   return '';
 }
 
 function listCommandFiles() {
-  const dir = __dirname;
   try {
+    const dir = __dirname;
     return fs
       .readdirSync(dir)
-      .filter(f => f.endsWith('.js'))
-      .map(f => path.basename(f, '.js'))
+      .filter(file => file.endsWith('.js'))
+      .map(file => path.basename(file, '.js'))
       .filter(name => !EXCLUDE.includes(name))
       .sort()
       .map(name => {
         const fp = path.join(dir, `${name}.js`);
-        return { name, desc: getCommandDescription(fp) };
+        return {
+          name,
+          desc: getCommandDescription(fp),
+        };
       });
   } catch {
     return [];
   }
 }
 
-function buildHelpMessage(cmdList, opts) {
+function buildHelpMessage(commands, opts = {}) {
   const {
     runtime = getUptime(),
     mode = settings.commandMode || 'public',
@@ -108,7 +117,6 @@ function buildHelpMessage(cmdList, opts) {
     ramTotal = '?',
     time = new Date().toLocaleTimeString('en-GB', { hour12: false }),
     name = 'User',
-    user = 'Unknown',
   } = opts;
 
   const header = `*🤖 ${settings.botName || '𝙼𝚒𝚌𝚔𝚎𝚢 𝙶𝚕𝚒𝚝𝚌𝚑'}*\n\n` +
@@ -119,29 +127,34 @@ function buildHelpMessage(cmdList, opts) {
     `🧠 RAM: ${ramUsed} / ${ramTotal} GB\n\n` +
     `━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
 
-  const title = `*📋 Commands (${cmdList.length})*\n\n`;
+  const title = `*📋 Commands (${commands.length})*\n\n`;
 
-  const list = cmdList
-    .map(c => `▸ *\( {prefix} \){c.name}*${c.desc ? ` - ${c.desc}` : ''}`)
+  // ─── FIXED: correct prefix rendering ───
+  const commandList = commands
+    .map(cmd => {
+      const fullCmd = `\( {prefix} \){cmd.name}`;
+      const desc = cmd.desc ? ` - ${cmd.desc}` : '';
+      return `▸ *\( {fullCmd}* \){desc}`;
+    })
     .join('\n');
 
-  const footer = `\n━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n📊 Total: ${cmdList.length} | Excluded: ${EXCLUDE.length}`;
+  const footer = `\n━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n📊 Total: ${commands.length} | Hidden: ${EXCLUDE.length}`;
 
-  return header + title + list + footer;
+  return header + title + commandList + footer;
 }
 
 async function sendTTSGreeting(sock, chatId, message) {
   try {
     const displayName = await getBestDisplayName(sock, message);
-    const text = `Hello ${displayName}, thanks for trusting my bot. Enjoy using Mickey Glitch!`;
+    const greeting = `Hello ${displayName}, thanks for using the bot. Enjoy Mickey Glitch!`;
 
-    const filename = `greeting-${Date.now()}.mp3`;
-    const dir = path.join(__dirname, '..', 'assets');
-    const filepath = path.join(dir, filename);
+    const filename = `greet-${Date.now()}.mp3`;
+    const assetsDir = path.join(__dirname, '..', 'assets');
+    const filepath = path.join(assetsDir, filename);
 
-    await fs.promises.mkdir(dir, { recursive: true });
+    await fs.promises.mkdir(assetsDir, { recursive: true });
 
-    const gtts = new gTTS(text, 'en');
+    const gtts = new gTTS(greeting, 'en');
 
     await new Promise((resolve, reject) => {
       gtts.save(filepath, err => (err ? reject(err) : resolve()));
@@ -155,11 +168,10 @@ async function sendTTSGreeting(sock, chatId, message) {
       ptt: true,
     }, { quoted: message });
 
-    // cleanup
-    fs.unlink(filepath, () => {});
+    fs.unlink(filepath, () => {}); // cleanup
   } catch (err) {
-    console.error('[TTS Greeting] Failed:', err.message || err);
-    // silent fail → don't break help command
+    console.error('[TTS Greeting] Failed:', err);
+    // silent fail
   }
 }
 
@@ -167,36 +179,39 @@ async function helpCommand(sock, chatId, message) {
   if (!sock || !chatId) return;
 
   try {
+    // System info
     const memUsed = (process.memoryUsage().rss / 1024 ** 3).toFixed(2);
     const memTotal = (os.totalmem() / 1024 ** 3).toFixed(2);
 
     const displayName = await getBestDisplayName(sock, message);
-    const userId = (message?.key?.participant || message?.key?.from || '').split('@')[0] || 'Unknown';
+    const senderNumber = (message?.key?.participant || message?.key?.from || '')
+      .split('@')[0] || 'Unknown';
 
-    const cmdList = listCommandFiles();
+    const commands = listCommandFiles();
 
-    if (!cmdList.length) {
-      return sock.sendMessage(chatId, { text: FALLBACK }, { quoted: message });
+    if (commands.length === 0) {
+      return sock.sendMessage(chatId, { text: FALLBACK_MSG }, { quoted: message });
     }
 
-    const helpText = buildHelpMessage(cmdList, {
+    const helpText = buildHelpMessage(commands, {
       ramUsed: memUsed,
       ramTotal: memTotal,
       name: displayName,
-      user: userId,
     });
 
-    // Send main help message
+    // ─── Send help ───────────────────────────────────────
     if (helpText.length > 4000) {
-      const tmp = path.join(os.tmpdir(), `help-${Date.now()}.txt`);
-      fs.writeFileSync(tmp, helpText);
+      const tmpFile = path.join(os.tmpdir(), `help-${Date.now()}.txt`);
+      fs.writeFileSync(tmpFile, helpText, 'utf8');
+
       await sock.sendMessage(chatId, {
-        document: { url: tmp },
-        fileName: `help-commands-${new Date().toISOString().slice(0,10)}.txt`,
+        document: { url: tmpFile },
+        fileName: `commands-${new Date().toISOString().slice(0,10)}.txt`,
         mimetype: 'text/plain',
         caption: `📚 Full command list (v${settings.version || '?.?'})`,
       }, { quoted: message });
-      fs.unlink(tmp, () => {});
+
+      fs.unlink(tmpFile, () => {});
     } else {
       await sock.sendMessage(chatId, {
         text: helpText,
@@ -215,27 +230,23 @@ async function helpCommand(sock, chatId, message) {
       }, { quoted: message });
     }
 
-    // Voice greeting (non-blocking)
+    // TTS greeting (non-blocking)
     sendTTSGreeting(sock, chatId, message).catch(console.error);
 
   } catch (error) {
-    console.error('[helpCommand] Error:', error);
+    console.error('[help command] Error:', error);
 
-    let errMsg = 'Unknown error';
-    if (error instanceof Error) {
-      errMsg = error.message;
-    } else if (typeof error === 'string') {
-      errMsg = error;
-    } else {
-      errMsg = String(error);
-    }
+    let errText = 'Unknown error';
+    if (error instanceof Error) errText = error.message;
+    else if (typeof error === 'string') errText = error;
+    else errText = String(error);
 
-    const msg = `*Error occurred:*\n\( {errMsg}\n\n \){FALLBACK}`;
+    const reply = `*Error occurred while generating help:*\n\( {errText}\n\n \){FALLBACK_MSG}`;
 
     try {
-      await sock.sendMessage(chatId, { text: msg }, { quoted: message });
+      await sock.sendMessage(chatId, { text: reply }, { quoted: message });
     } catch (e2) {
-      console.error('Also failed to send error message:', e2);
+      console.error('Failed to send error message too:', e2);
     }
   }
 }
