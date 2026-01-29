@@ -108,7 +108,7 @@ function buildHelpMessage(commands, opts = {}) {
 async function sendTTSGreeting(sock, chatId, message) {
   try {
     const displayName = await getBestDisplayName(sock, message);
-    const greeting = `Hello ${displayName}, I am ${settings.botName}. How can I help you today?`;
+    const greeting = `Hello ${displayName}, I am ${settings.botName}. This is all my command please use safe dont harm anyone`;
     const assetsDir = path.join(__dirname, '..', 'temp');
     if (!fs.existsSync(assetsDir)) fs.mkdirSync(assetsDir);
     
