@@ -45,21 +45,63 @@ async function songCommand(sock, chatId, message) {
 
     if (!downloadUrl) throw new Error('Failed to get audio from FastAPI downloader.');
 
-    // Send thumbnail/info
+    // Try to fetch content-length for nicer UI (optional)
+    let sizeText = '';
+    try {
+      const head = await axios.head(downloadUrl, { timeout: 10000 });
+      const len = head.headers['content-length'] || head.headers['Content-Length'];
+      if (len) {
+        const mb = (Number(len) / 1024 / 1024).toFixed(2);
+        sizeText = `• Size: ${mb} MB`;
+      }
+    } catch (e) {
+      // ignore head errors — not critical
+    }
+
+    // Build a clean, short title for captions and filename
+    const shortTitle = (videoTitle || 'Unknown').replace(/\s+/g, ' ').trim();
+    const displayTitle = shortTitle.length > 60 ? `${shortTitle.slice(0, 57)}...` : shortTitle;
+    const safeFileName = shortTitle.replace(/[\\/:*?"<>|]/g, '') || 'song';
+
+    // Create a nicer caption with bullets and attribution
+    const caption = `🎵 *${displayTitle}*\n\n🔗 ${videoUrl}\n${sizeText ? `${sizeText}\n` : ''}\n📥 Converting to MP3 and sending...\n\n> Powered by ${OWNER_NAME} Tech`;
+
+    // Buttons for quick actions (clients using Baileys support `buttons`)
+    const buttons = [
+      { buttonId: `.play ${displayTitle}`, buttonText: { displayText: '🔊 Play' }, type: 1 },
+      { buttonId: `.song ${displayTitle}`, buttonText: { displayText: '⬇️ Download' }, type: 1 }
+    ];
+
+    // Send thumbnail with rich preview (externalAdReply) and buttons
     if (thumbnail) {
       await sock.sendMessage(chatId, {
         image: { url: thumbnail },
-        caption: `> 🎵 *${videoTitle}*\n\n> 🔗 ${videoUrl}\n\n> 📥 Downloading audio...\n\n> Powered By ${OWNER_NAME} Tech`,
+        caption,
+        contextInfo: {
+          externalAdReply: {
+            title: videoTitle || 'Music',
+            body: 'YouTube • Audio',
+            thumbnailUrl: thumbnail,
+            sourceUrl: videoUrl,
+            mediaType: 1,
+            showAdAttribution: false
+          }
+        },
+        buttons,
+        headerType: 4
       }, { quoted: message });
     } else {
-      await sock.sendMessage(chatId, { text: `🎵 ${videoTitle}\n🔗 ${videoUrl}\n📥 Downloading audio...\nPowered By ${OWNER_NAME} Tech` }, { quoted: message });
+      await sock.sendMessage(chatId, {
+        text: caption,
+        buttons,
+      }, { quoted: message });
     }
 
-    // Send audio via URL
+    // Send audio via URL with sanitized filename
     await sock.sendMessage(chatId, {
       audio: { url: downloadUrl },
       mimetype: 'audio/mpeg',
-      fileName: `${videoTitle}.mp3`,
+      fileName: `${safeFileName}.mp3`,
       ptt: false
     }, { quoted: message });
 
