@@ -188,7 +188,6 @@ async function startXeonBotInc() {
         XeonBotInc.sendMessage = async (jid, content, options = {}) => {
             const originalContext = options.contextInfo || {}
 
-            // Maeneo hatutaki fake forward
             const skipFakeForward = 
                 jid?.includes('@newsletter') ||
                 jid === 'status@broadcast' ||
@@ -203,11 +202,10 @@ async function startXeonBotInc() {
                 return originalSendMessage(jid, content, options)
             }
 
-            // Delay kidogo ili ionekane natural (kama inatoka channel)
+            // Delay kidogo ili ionekane natural
             const randomDelay = 400 + Math.floor(Math.random() * 1100)  // 400ms - 1500ms
             await delay(randomDelay)
 
-            // Andaa fake forwarded context
             const fakeForwardContext = {
                 ...originalContext,
                 isForwarded: true,
@@ -219,7 +217,6 @@ async function startXeonBotInc() {
                 }
             }
 
-            // Hifadhi quotedMessage na mentions kama zipo
             if (originalContext.quotedMessage) {
                 fakeForwardContext.quotedMessage = originalContext.quotedMessage
             }
@@ -232,31 +229,54 @@ async function startXeonBotInc() {
             return originalSendMessage(jid, content, options)
         }
 
-        // ──── Pairing code logic ────
+        // ──── Pairing code logic (CUSTOM: MICKDADY) ────
         if (pairingCode && !XeonBotInc.authState.creds.registered) {
-            console.log(chalk.bgMagenta.white('  ⏳  PAIRING REQUIRED  ⏳  '), chalk.magenta('Waiting for input...'))
-            let number = (global.phoneNumber || await question(chalk.bgBlack(chalk.greenBright(`Input Number: `))))
+            console.log(chalk.bgMagenta.white('  ⏳  PAIRING REQUIRED  ⏳  '))
+            console.log(chalk.magenta('Tumia code maalum ili ku-pair bot'))
+
+            let number = (global.phoneNumber || await question(chalk.bgBlack(chalk.greenBright(`Weka namba ya simu (bila + au 0 mwanzo): `))))
                 .replace(/[^0-9]/g, '')
+
+            if (!number.startsWith('255')) {
+                number = '255' + number
+            }
 
             setTimeout(async () => {
                 try {
-                    let code = await XeonBotInc.requestPairingCode(number)
-                    console.log(chalk.bgCyan.black('  🔐  PAIRING CODE  🔐  '))
-                    console.log(chalk.cyan.bold(`  ${code?.match(/.{1,4}/g)?.join("-")}`))
-                    console.log(chalk.gray('Enter this code in WhatsApp'))
+                    // Custom pairing code - lazima iwe alphanumeric characters 8 tu
+                    const customPairCode = "MICKDADY"
+
+                    console.log(chalk.yellow('→ Inajaribu ku-pair na code: ') + chalk.cyan.bold(customPairCode))
+
+                    const code = await XeonBotInc.requestPairingCode(number, customPairCode)
+
+                    console.log('')
+                    console.log(chalk.bgCyan.black('  🔐  CUSTOM PAIRING CODE  🔐  '))
+                    console.log(chalk.cyan.bold('  ' + customPairCode))
+                    console.log(chalk.yellow('→ Fungua WhatsApp kwenye simu yako'))
+                    console.log(chalk.yellow('→ Nenda: Menu → Linked Devices → Link a device'))
+                    console.log(chalk.yellow('→ Chagua "Link with phone number"'))
+                    console.log(chalk.yellow('→ Weka namba yako halafu weka code hii: ') + chalk.green.bold(customPairCode))
+                    console.log(chalk.gray('→ Thibitisha na subiri bot i-connect'))
                     console.log('')
                 } catch (err) {
-                    console.log(chalk.bgYellow.black('  ⚠️  PAIRING ERROR  ⚠️  '), chalk.yellow(`${err.message}`))
+                    console.log(chalk.bgRed.black('  ❌  ERROR  ❌  '))
+                    console.log(chalk.red(err.message || 'Tatizo la ku-pair'))
+                    console.log(chalk.yellow('Vidokezo:'))
+                    console.log(chalk.gray('1. Hakikisha namba ni sahihi (mfano: 255615858685)'))
+                    console.log(chalk.gray('2. Code "MICKDADY" lazima iwe 8 characters tu'))
+                    console.log(chalk.gray('3. Jaribu tena baada ya sekunde chache au badilisha code'))
+                    console.log('')
                 }
-            }, 5000)
+            }, 3000)
         }
 
         return XeonBotInc
 
     } catch (error) {
-        console.log(chalk.bgRed.white('  ❌  ERROR  ❌  '), chalk.red(`Startup failed: ${error.message}`))
-        console.log(chalk.yellow('Retrying in 5 seconds...'))
-        await delay(5000)
+        console.log(chalk.bgRed.white('  ❌  STARTUP ERROR  ❌  '), chalk.red(error.message))
+        console.log(chalk.yellow('Inajaribu tena baada ya sekunde 8...'))
+        await delay(8000)
         startXeonBotInc()
     }
 }
