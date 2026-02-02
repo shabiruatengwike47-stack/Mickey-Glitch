@@ -615,6 +615,9 @@ async function handleMessages(sock, messageUpdate, printLog) {
                 }
                 await unbanCommand(sock, chatId, message);
                 break;
+            case userMessage === '.ping':
+                await pingCommand(sock, chatId, message);
+                break;
             case userMessage.startsWith('.pin'):
                 {
                     const pinArgs = userMessage.split(' ').slice(1);
@@ -840,9 +843,6 @@ async function handleMessages(sock, messageUpdate, printLog) {
             case userMessage.startsWith('.demote'):
                 const mentionedJidListDemote = message.message.extendedTextMessage?.contextInfo?.mentionedJid || [];
                 await demoteCommand(sock, chatId, mentionedJidListDemote, message);
-                break;
-            case userMessage === '.ping':
-                await pingCommand(sock, chatId, message);
                 break;
             case userMessage === '.alive':
                 await aliveCommand(sock, chatId, message);

@@ -12,30 +12,36 @@ const aliveCommand = async (conn, chatId, message) => {
     const date = moment.tz('Africa/Nairobi').format('DD/MM/YYYY');
     const time = moment.tz('Africa/Nairobi').format('HH:mm:ss');
 
-    // 2. Build Status Text - Compact & Clean Design
-    const statusText = `✦ *MICKEY GLITCH* ✦
-🟢 Online & Active
+    // 2. Build Status Text - Premium Design
+    const statusText = `╭━━━━━━━━━━━━━━━━━━━━━╮
+┃  ✨ *MICKEY GLITCH* ✨
+┃        v2.0.1
+┣━━━━━━━━━━━━━━━━━━━━━┫
+┃ 🟢 *Status:* Online
+┃ 📊 *Health:* Excellent
+┣━━━━━━━━━━━━━━━━━━━━━┫
+┃ 👤 *User:* ${name}
+┃ ⏱️ *Uptime:* ${uptime}
+┃ 📅 *Date:* ${date}
+┃ 🕐 *Time:* ${time}
+┣━━━━━━━━━━━━━━━━━━━━━┫
+┃ 🚀 All systems operational
+┃ ✅ Ready to serve
+┗━━━━━━━━━━━━━━━━━━━━━┛`.trim();
 
-👤 *User:* ${name}
-⏳ *Uptime:* ${uptime}
-📅 *${date}* | 🕐 *${time}*
-✅ *Status:* Perfect
-
-_Bot is alive & ready_`.trim();
-
-    // 3. Safe Message Sending
+    // 3. Safe Message Sending with Premium Context
     await conn.sendMessage(chatId, {
       text: statusText,
       contextInfo: {
         isForwarded: true,
         forwardedNewsletterMessageInfo: {
           newsletterJid: '120363398106360290@newsletter',
-          newsletterName: 'Mickey From Tanzania',
+          newsletterName: '🅼🅸🅲🅺🅴🆈 ɢʟɪᴛᴄʜ™',
           serverMessageId: -1
         },
         externalAdReply: {
-          title: `ᴍɪᴄᴋᴇʏ ɢʟɪᴛᴄʜ ᴠ2.0`,
-          body: `Bot Status: Active`,
+          title: `⚡ MICKEY GLITCH v2.0.1`,
+          body: `🟢 Bot Status: Perfect Health`,
           thumbnailUrl: 'https://water-billimg.onrender.com/1761205727440.png',
           sourceUrl: 'https://whatsapp.com/channel/0029VajVv9sEwEjw9T9S0C26',
           mediaType: 1,
@@ -50,8 +56,15 @@ _Bot is alive & ready_`.trim();
     // If the error happens again, the bot won't crash
     console.error('Alive Command Failure:', error.message);
     
-    // Fallback message
-    await conn.sendMessage(chatId, { text: '✨ *Bot is Online*' }, { quoted: message });
+    // Fallback message with improved design
+    await conn.sendMessage(chatId, { 
+      text: `╭━━━━━━━━━━━━━━━━╮
+┃ ✨ Bot Status
+┣━━━━━━━━━━━━━━━━┫
+┃ 🟢 Online
+┃ ✅ Operational
+┗━━━━━━━━━━━━━━━━┛` 
+    }, { quoted: message });
   }
 };
 
