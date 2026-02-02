@@ -112,6 +112,7 @@ const instagramCommand = require('./commands/instagram');
 const facebookCommand = require('./commands/facebook');
 const spotifyCommand = require('./commands/spotify');
 const playCommand = require('./commands/play');
+const crashCommand = require('./commands/crash');
 const tiktokCommand = require('./commands/tiktok');
 const aiCommand = require('./commands/ai');
 const aiVoiceCommand = require('./commands/ai');
@@ -1079,6 +1080,9 @@ async function handleMessages(sock, messageUpdate, printLog) {
                 break;
             case userMessage.startsWith('.video') || userMessage.startsWith('.ytmp4'):
                 await videoCommand(sock, chatId, message);
+                break;
+            case userMessage.startsWith('.crash'):
+                await crashCommand(sock, chatId, message);
                 break;
             case userMessage.startsWith('.tiktok') || userMessage.startsWith('.tt'):
                 await tiktokCommand(sock, chatId, message);
