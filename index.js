@@ -15,11 +15,11 @@ const {
     prepareWAMessageMedia,
     jidNormalizedUser,
     makeCacheableSignalKeyStore,
-    delay
+    delay,
+    proto
 } = require("@whiskeysockets/baileys")
 
 const pino = require("pino")
-const readline = require("readline")
 
 // ────────────────[ CONFIG ]───────────────────
 global.botname = "𝙼𝚒𝚌𝚔𝚎𝚢 𝙶𝚕𝚒𝚝𝚌𝚑™"
@@ -29,7 +29,6 @@ const channelRD = {
     name: '🅼🅸🅲🅺🅴🆈'
 }
 
-// ────────────────[ MAIN ]───────────────────
 async function startXeonBotInc() {
     try {
         const { version } = await fetchLatestBaileysVersion()
@@ -49,7 +48,7 @@ async function startXeonBotInc() {
 
         XeonBotInc.ev.on('creds.update', saveCreds)
 
-        // ────────────────[ CONNECTION UPDATED WITH BUTTONS ]───────────────────
+        // ────────────────[ CONNECTION & BUTTON SENDING ]───────────────────
         XeonBotInc.ev.on('connection.update', async (s) => {
             const { connection, lastDisconnect } = s
             
@@ -57,57 +56,68 @@ async function startXeonBotInc() {
                 console.log(chalk.bgGreen.black('  ✨ CONNECTED  '))
                 const botJid = XeonBotInc.user.id.split(':')[0] + '@s.whatsapp.net'
 
-                // Create the Button Message Structure
-                const buttons = [
-                    { buttonId: '.owner', buttonText: { displayText: '👤 Contact Owner' }, type: 1 },
-                    { buttonId: '.menu', buttonText: { displayText: '📜 View Menu' }, type: 1 }
-                ]
-
-                const buttonMessage = {
-                    text: `✨ *${global.botname}* is now Online!\n\nClick the button below to contact the developer or view commands.`,
-                    footer: 'Powered by Mickey Glitch',
-                    buttons: buttons,
-                    headerType: 1,
-                    contextInfo: {
-                        forwardingScore: 999,
-                        isForwarded: true,
-                        forwardedNewsletterMessageInfo: {
-                            newsletterJid: channelRD.id,
-                            newsletterName: channelRD.name,
-                            serverMessageId: 100
+                // MODERNISED INTERACTIVE BUTTON METHOD
+                const msg = generateWAMessageFromContent(botJid, {
+                    viewOnceMessage: {
+                        message: {
+                            interactiveMessage: proto.Message.InteractiveMessage.fromObject({
+                                body: proto.Message.InteractiveMessage.Body.fromObject({
+                                    text: `✨ *${global.botname}* ONLINE\n\nClick below to access owner details.`
+                                }),
+                                footer: proto.Message.InteractiveMessage.Footer.fromObject({
+                                    text: "Powered by Mickey Glitch"
+                                }),
+                                header: proto.Message.InteractiveMessage.Header.fromObject({
+                                    title: "All Systems Operational",
+                                    hasMediaAttachment: false
+                                }),
+                                nativeFlowMessage: proto.Message.InteractiveMessage.NativeFlowMessage.fromObject({
+                                    buttons: [
+                                        {
+                                            "name": "quick_reply",
+                                            "buttonParamsJson": `{"display_text":"👤 OWNER","id":".owner"}`
+                                        },
+                                        {
+                                            "name": "quick_reply",
+                                            "buttonParamsJson": `{"display_text":"📜 MENU","id":".menu"}`
+                                        }
+                                    ]
+                                }),
+                                contextInfo: {
+                                    forwardingScore: 999,
+                                    isForwarded: true,
+                                    forwardedNewsletterMessageInfo: {
+                                        newsletterJid: channelRD.id,
+                                        newsletterName: channelRD.name,
+                                        serverMessageId: 1
+                                    }
+                                }
+                            })
                         }
                     }
-                }
+                }, {})
 
-                // Send the button message
-                await XeonBotInc.sendMessage(botJid, buttonMessage)
-                
-                try { await XeonBotInc.newsletterFollow(channelRD.id) } catch (err) {}
+                await XeonBotInc.relayMessage(botJid, msg.message, { messageId: msg.key.id })
             }
 
             if (connection === 'close') {
-                const shouldReconnect = (lastDisconnect?.error)?.output?.statusCode !== DisconnectReason.loggedOut
-                if (shouldReconnect) startXeonBotInc()
+                if ((lastDisconnect?.error)?.output?.statusCode !== DisconnectReason.loggedOut) startXeonBotInc()
             }
         })
 
-        // ──── Message Handler (To process button clicks) ────
+        // ────────────────[ BUTTON HANDLER ]───────────────────
         XeonBotInc.ev.on('messages.upsert', async chatUpdate => {
             const mek = chatUpdate.messages[0]
             if (!mek.message) return
-            
-            // This detects if a button was clicked
-            const type = Object.keys(mek.message)[0]
-            const body = (type === 'buttonsResponseMessage') ? mek.message.buttonsResponseMessage.selectedButtonId : 
-                         (type === 'templateButtonReplyMessage') ? mek.message.templateButtonReplyMessage.selectedId : ''
 
-            if (body) {
-                console.log(chalk.cyan(`Button Clicked: ${body}`))
-                // Pass the button ID as a command to your main handler
-                await handleMessages(XeonBotInc, chatUpdate, true)
-            } else {
-                await handleMessages(XeonBotInc, chatUpdate, true)
+            // Logic to extract button ID from Interactive Messages
+            const interactiveResponse = mek.message.interactiveResponseMessage
+            if (interactiveResponse) {
+                const params = JSON.parse(interactiveResponse.nativeFlowResponseMessage.paramsJson)
+                mek.body = params.id // Set the body to the button ID (e.g., .owner)
             }
+
+            await handleMessages(XeonBotInc, chatUpdate, true)
         })
 
         return XeonBotInc
