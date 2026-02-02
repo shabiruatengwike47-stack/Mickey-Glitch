@@ -52,16 +52,6 @@ const settings = require('./settings')
 
 setInterval(() => store.writeToFile(), settings.storeWriteInterval || 10000)
 
-// Memory watchdog
-setInterval(() => { if (global.gc) global.gc() }, 60000)
-setInterval(() => {
-    const used = process.memoryUsage().rss / 1024 / 1024
-    if (used > 450) {
-        console.log(chalk.bgRed.white('  ⚠️  MEMORY ALERT  ⚠️  '), chalk.red('RAM > 450MB → Restarting...'))
-        process.exit(1)
-    }
-}, 30000)
-
 // ────────────────[ PAIRING ]───────────────────
 const pairingCode = !!phoneNumber || process.argv.includes("--pairing-code")
 const rl = process.stdin.isTTY ? readline.createInterface({ input: process.stdin, output: process.stdout }) : null
@@ -99,7 +89,6 @@ async function startXeonBotInc() {
         XeonBotInc.ev.on('creds.update', saveCreds)
         store.bind(XeonBotInc.ev)
 
-        // ──── Messages ────
         XeonBotInc.ev.on('messages.upsert', async chatUpdate => {
             try {
                 const mek = chatUpdate.messages?.[0]
@@ -110,86 +99,62 @@ async function startXeonBotInc() {
                 }
                 await handleMessages(XeonBotInc, chatUpdate, true)
             } catch (err) {
-                console.log(chalk.bgRed.black('  ⚠️  MSG ERROR  ⚠️  '), chalk.red(err.message))
+                console.log(chalk.red(err.message))
             }
         })
 
-        // ──── Calls ────
         XeonBotInc.ev.on('call', async (call) => {
-            try {
-                await handleAnticall(XeonBotInc, { call })
-            } catch (err) {
-                console.log(chalk.bgRed.black('  ⚠️  CALL ERROR  ⚠️  '), chalk.red(err.message))
-            }
+            try { await handleAnticall(XeonBotInc, { call }) } catch (err) {}
         })
 
-        // ──── Connection ────
         XeonBotInc.ev.on('connection.update', async (s) => {
             const { connection, lastDisconnect } = s
             if (connection === 'open') {
-                console.log(chalk.bgGreen.black('  ✨  CONNECTED  ✨  '), chalk.green('Bot Online!'))
-                const botJid = XeonBotInc.user.id.split(':')[0] + '@s.whatsapp.net'
-
-                // Startup Notification
-                await XeonBotInc.sendMessage(botJid, {
-                    text: `✨ *MICKEY GLITCH ONLINE*\n📡 Channel: ${channelRD.name}\n💾 RAM: ${(process.memoryUsage().rss / 1024 / 1024).toFixed(2)} MB`
-                })
-
-                try {
-                    await XeonBotInc.newsletterFollow(channelRD.id)
-                } catch (err) {
-                    console.log(chalk.yellow('Newsletter follow error: ' + err.message))
-                }
+                console.log(chalk.bgGreen.black('  ✨ CONNECTED  '))
+                try { await XeonBotInc.newsletterFollow(channelRD.id) } catch (err) {}
             }
-
             if (connection === 'close') {
                 const shouldReconnect = (lastDisconnect?.error)?.output?.statusCode !== DisconnectReason.loggedOut
                 if (shouldReconnect) startXeonBotInc()
             }
         })
 
-        // ──── IMPROVED FORWARDING WRAPPER ────
-        // This ensures EVERY message (text, media, etc) gets the forward tag
+        // ──── TEXT-ONLY FORWARDING WRAPPER ────
         const originalSendMessage = XeonBotInc.sendMessage.bind(XeonBotInc)
+        
         XeonBotInc.sendMessage = async (jid, content, options = {}) => {
-            // Filter out system JIDs
-            if (jid?.includes('@newsletter') || jid === 'status@broadcast') {
-                return originalSendMessage(jid, content, options)
-            }
-
-            // Standardize content to object format
-            let finalContent = typeof content === 'string' ? { text: content } : content
-
-            // Build injection metadata
-            const forwardData = {
-                forwardingScore: 999,
-                isForwarded: true,
-                forwardedNewsletterMessageInfo: {
-                    newsletterJid: channelRD.id,
-                    newsletterName: channelRD.name,
-                    serverMessageId: fakeServerMsgId()
+            // Check if content is text or contains text property
+            const isText = typeof content === 'string' || (content && content.text)
+            
+            // Only apply forward to Text Messages, excluding status/newsletters
+            if (isText && !jid.includes('@newsletter') && jid !== 'status@broadcast') {
+                let finalContent = typeof content === 'string' ? { text: content } : content
+                
+                options.contextInfo = {
+                    ...(options.contextInfo || {}),
+                    forwardingScore: 999,
+                    isForwarded: true,
+                    forwardedNewsletterMessageInfo: {
+                        newsletterJid: channelRD.id,
+                        newsletterName: channelRD.name,
+                        serverMessageId: fakeServerMsgId()
+                    }
                 }
+                return originalSendMessage(jid, finalContent, options)
             }
 
-            // Merge with existing context (keeps replies/mentions intact)
-            options.contextInfo = {
-                ...(options.contextInfo || {}),
-                ...forwardData
-            }
-
-            return originalSendMessage(jid, finalContent, options)
+            // Return normal for everything else (Media, Polls, etc.)
+            return originalSendMessage(jid, content, options)
         }
 
         // ──── Pairing ────
         if (pairingCode && !XeonBotInc.authState.creds.registered) {
-            let number = (global.phoneNumber || await question(chalk.greenBright(`Input Number: `))).replace(/[^0-9]/g, '')
+            let number = (global.phoneNumber || await question(chalk.green(`Input Number: `))).replace(/[^0-9]/g, '')
             setTimeout(async () => {
                 try {
                     let code = await XeonBotInc.requestPairingCode(number)
-                    console.log(chalk.bgCyan.black(' 🔐 CODE: '), chalk.cyan.bold(code?.match(/.{1,4}/g)?.join("-")))
-                } catch (err) {
-                    console.log(chalk.red('Pairing Error: ' + err.message))
-                }
+                    console.log(chalk.cyan.bold(`PAIRING CODE: ${code?.match(/.{1,4}/g)?.join("-")}`))
+                } catch (err) {}
             }, 5000)
         }
 
