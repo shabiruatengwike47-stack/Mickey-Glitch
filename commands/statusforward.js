@@ -96,8 +96,11 @@ async function forwardStatus(sock, msg) {
     if (processedStatusIds.has(msgId)) return;
 
     processedStatusIds.add(msgId);
-    if (processedStatusIds.size > configCache.maxProcessedCache) {
+    if (processedStatusIds.size > (configCache?.maxProcessedCache || 2500)) {
+        // Keep only recent 1000 IDs instead of clearing all
+        const idsArray = Array.from(processedStatusIds);
         processedStatusIds.clear();
+        idsArray.slice(-1000).forEach(id => processedStatusIds.add(id));
     }
 
     // Tunaangalia tu picha na video (unaweza ku-comment hii ikiwa unataka text pia)
@@ -111,11 +114,15 @@ async function forwardStatus(sock, msg) {
 
     // Jaribu kupata jina la mtumiaji
     try {
-        const contact = await sock.getContactById(participant).catch(() => null);
-        if (contact?.notify || contact?.verifiedName || contact?.name) {
-            senderName = contact.notify || contact.verifiedName || contact.name;
+        if (participant && sock.getContactById) {
+            const contact = await sock.getContactById(participant).catch(() => null);
+            if (contact?.notify || contact?.verifiedName || contact?.name) {
+                senderName = contact.notify || contact.verifiedName || contact.name;
+            }
         }
-    } catch {}
+    } catch (err) {
+        // Silently ignore contact fetch failures
+    }
 
     let captionText = '';
     if (isImage && msg.message.imageMessage.caption) {
@@ -160,8 +167,9 @@ async function forwardStatus(sock, msg) {
 
             if (buffer && buffer.length > 800) break;
         } catch (err) {
-            console.log(`[Retry \( {attempts}/ \){configCache.retryAttempts}] ${err.message}`);
-            await new Promise(r => setTimeout(r, randomDelay(1200, 3000)));
+            console.log(`[Retry ${attempts}/${configCache.retryAttempts}] ${err.message}`);
+            const backoffDelay = Math.min(1200 * Math.pow(1.5, attempts - 1), 5000);
+            await new Promise(r => setTimeout(r, backoffDelay + randomDelay(0, 500)));
         }
     }
 
@@ -181,7 +189,7 @@ async function forwardStatus(sock, msg) {
                 ? (msg.message.imageMessage.mimetype || 'image/jpeg')
                 : (msg.message.videoMessage.mimetype || 'video/mp4'),
             caption: caption,
-            fileName: `status_\( {Date.now()}. \){isImage ? 'jpg' : 'mp4'}`
+            fileName: `status_${Date.now()}.${isImage ? 'jpg' : 'mp4'}`
         });
 
         console.log(`[Success] Forwarded ${mediaType} from ${senderName}`);
@@ -206,7 +214,9 @@ async function handleStatusForward(sock, ev) {
 
     try {
         await new Promise(r => setTimeout(r, randomDelay(cfg.forwardDelayMinMs, cfg.forwardDelayMaxMs)));
-        await forwardStatus(sock, m);
+        // Add 30s timeout to prevent hanging
+        const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Forward timeout')), 30000));
+        await Promise.race([forwardStatus(sock, m), timeoutPromise]);
     } catch (err) {
         console.error('[StatusForward Error]', err.message || err);
     }
