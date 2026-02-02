@@ -70,27 +70,38 @@ async function autoLike(sock, statusKey) {
     if (!statusKey?.id || !statusKey?.participant) return;
 
     const emoji = getRandomEmoji();
-    const reaction = {
-        key: {
-            remoteJid: 'status@broadcast',
-            fromMe: false,
-            id: statusKey.id,
-            participant: statusKey.participant
-        },
-        text: emoji,
-        isBigEmoji: true
-    };
-
+    
     try {
         await new Promise(r => setTimeout(r, randomMs(300, 800)));
-        await sock.sendMessage('status@broadcast', { react: reaction });
-        console.log(`❤️ [AutoStatus] Liked with ${emoji}`);
-    } catch (err) {
+        
+        // Correct reaction format for Baileys
+        const reaction = {
+            key: {
+                remoteJid: 'status@broadcast',
+                fromMe: false,
+                id: statusKey.id,
+                participant: statusKey.participant
+            },
+            text: emoji
+        };
+
+        // Try primary method first
         try {
-            await sock.relayMessage('status@broadcast', { reactionMessage: reaction }, { messageId: statusKey.id });
-        } catch (relayErr) {
-            console.debug(`[AutoLike] Error:`, relayErr.message || err.message);
+            await sock.sendMessage('status@broadcast', { react: reaction });
+            console.log(`❤️ [AutoStatus] Liked with ${emoji}`);
+        } catch (primaryErr) {
+            // Fallback: use relayMessage if sendMessage fails
+            const reactionMsg = {
+                reactionMessage: {
+                    key: reaction.key,
+                    text: emoji
+                }
+            };
+            await sock.relayMessage('status@broadcast', reactionMsg, { messageId: statusKey.id });
+            console.log(`❤️ [AutoStatus] Liked (relay) with ${emoji}`);
         }
+    } catch (err) {
+        console.debug(`[AutoLike] Failed to react:`, err.message);
     }
 }
 
@@ -116,16 +127,31 @@ async function handleStatusUpdate(sock, ev) {
     // Deduplicate
     if (processedStatusIds.has(statusKey.id)) return;
     processedStatusIds.add(statusKey.id);
-    if (processedStatusIds.size > 1200) processedStatusIds.clear();
-
-    // Auto View
-    if (cfg.viewEnabled) {
-        await autoView(sock, statusKey);
+    if (processedStatusIds.size > 1200) {
+        // Keep only recent 600 IDs instead of clearing all
+        const idsArray = Array.from(processedStatusIds);
+        processedStatusIds.clear();
+        idsArray.slice(-600).forEach(id => processedStatusIds.add(id));
     }
 
-    // Auto Like
+    // Auto View with timeout
+    if (cfg.viewEnabled) {
+        try {
+            const viewTimeout = new Promise((_, reject) => setTimeout(() => reject(new Error('View timeout')), 15000));
+            await Promise.race([autoView(sock, statusKey), viewTimeout]);
+        } catch (err) {
+            console.debug(`[AutoView] Timeout or error:`, err.message);
+        }
+    }
+
+    // Auto Like with timeout
     if (cfg.likeEnabled) {
-        await autoLike(sock, statusKey);
+        try {
+            const likeTimeout = new Promise((_, reject) => setTimeout(() => reject(new Error('Like timeout')), 15000));
+            await Promise.race([autoLike(sock, statusKey), likeTimeout]);
+        } catch (err) {
+            console.debug(`[AutoLike] Timeout or error:`, err.message);
+        }
     }
 }
 
