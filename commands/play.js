@@ -17,7 +17,7 @@ const MP3_APIS = [
   url => `https://apis-malvin.vercel.app/download/dlmp3?url=${url}`,
   url => `https://apis.davidcyriltech.my.id/youtube/mp3?url=${url}`,
   url => `https://api.ryzendesu.vip/api/downloader/ytmp3?url=${url}`,
-  url => `https://api.dreaded.site/api/ytdl/audio?url=${url}`,
+  url => `https://meta-api.zone.id/downloader/youtube?url=${url}&format=360p`,
   url => `https://jawad-tech.vercel.app/download/ytmp3?url=${url}`,
   url => `https://api-aswin-sparky.koyeb.app/api/downloader/song?search=${url}`
 ];
