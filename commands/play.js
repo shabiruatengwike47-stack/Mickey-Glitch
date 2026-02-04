@@ -1,29 +1,22 @@
 const axios = require('axios');
+const yts = require('yt-search');
 const config = require('../config.js');
 
-const OWNER_NAME =
-  (config && config.OWNER_NAME) ||
-  process.env.OWNER_NAME ||
-  'Mickey';
-
-const API_KEY =
-  process.env.YOUTUBE_API_KEY ||
-  'AIzaSyDV11sdmCCdyyToNU-XRFMbKgAA4IEDOS0';
+// Mpangilio wa Jina la Owner
+const OWNER_NAME = (config && config.OWNER_NAME) || process.env.OWNER_NAME || 'Mickey';
 
 /* ======================================================
-   MULTI MP3 APIS (FAST RACE)
+   MULTI MP3 APIS (Zilizochujwa na Imara)
 ====================================================== */
 const MP3_APIS = [
-  url => `https://apis-malvin.vercel.app/download/dlmp3?url=${url}`,
-  url => `https://apis.davidcyriltech.my.id/youtube/mp3?url=${url}`,
-  url => `https://api.ryzendesu.vip/api/downloader/ytmp3?url=${url}`,
-  url => `https://meta-api.zone.id/downloader/youtube?url=${url}&format=360p`,
-  url => `https://jawad-tech.vercel.app/download/ytmp3?url=${url}`,
-  url => `https://api-aswin-sparky.koyeb.app/api/downloader/song?search=${url}`
+  url => `https://apis-malvin.vercel.app/download/dlmp3?url=${encodeURIComponent(url)}`,
+  url => `https://apis.davidcyriltech.my.id/youtube/mp3?url=${encodeURIComponent(url)}`,
+  url => `https://api.ryzendesu.vip/api/downloader/ytmp3?url=${encodeURIComponent(url)}`,
+  url => `https://jawad-tech.vercel.app/download/ytmp3?url=${encodeURIComponent(url)}`
 ];
 
 /**
- * SONG COMMAND
+ * SONG COMMAND FUNCTION
  */
 async function songCommand(sock, chatId, message) {
   const textBody =
@@ -35,79 +28,44 @@ async function songCommand(sock, chatId, message) {
     const title = getArg(textBody);
     if (!title) {
       return sock.sendMessage(
-        chatId,
-        { text: '❌ Please provide a video title.' },
+        chatId, 
+        { text: '❌ Tafadhali andika jina la wimbo unatafuta. \n\n*Mfano:* .song Calm Down' }, 
         { quoted: message }
       );
     }
 
-    // React (safe)
+    // Reaction: Inatafuta...
     try {
-      await sock.sendMessage(chatId, {
-        react: { text: '🔎', key: message.key }
-      });
-    } catch {}
+      await sock.sendMessage(chatId, { react: { text: '🔎', key: message.key } });
+    } catch (e) {}
 
-    await sock.sendMessage(
-      chatId,
-      { text: `🔎 Searching for: *${title}*` },
-      { quoted: message }
-    );
+    /* ─────── YouTube Search (yt-search) ─────── */
+    const searchResult = await yts(title);
+    const video = searchResult.videos[0]; // Inachukua video ya kwanza (Best Match)
 
-    /* ─────── YouTube Search ─────── */
-    const search = await axios.get(
-      'https://www.googleapis.com/youtube/v3/search',
-      {
-        params: {
-          part: 'snippet',
-          q: title,
-          type: 'video',
-          maxResults: 1,
-          key: API_KEY
-        },
-        timeout: 15000
-      }
-    );
-
-    const video = search.data?.items?.[0];
-    if (!video) throw new Error('No video found');
-
-    const videoId = video.id.videoId;
-    const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
-    const videoTitle = video.snippet.title;
-    const thumbnail =
-      video.snippet.thumbnails?.high?.url ||
-      video.snippet.thumbnails?.default?.url;
-
-    /* ─────── FAST MP3 FETCH ─────── */
-    const downloadUrl = await fetchMp3Fast(videoUrl);
-
-    /* ─────── Duration (optional) ─────── */
-    let durationText = 'Unknown';
-    try {
-      const vd = await axios.get(
-        'https://www.googleapis.com/youtube/v3/videos',
-        {
-          params: {
-            part: 'contentDetails',
-            id: videoId,
-            key: API_KEY
-          }
-        }
+    if (!video) {
+      return sock.sendMessage(
+        chatId, 
+        { text: '❌ Samahani, sikuweza kupata wimbo huo. Jaribu kuandika jina kwa usahihi.' }, 
+        { quoted: message }
       );
-      const iso = vd.data?.items?.[0]?.contentDetails?.duration;
-      if (iso) durationText = isoToTime(iso);
-    } catch {}
+    }
 
-    const safeName = videoTitle
-      .replace(/[\\/:*?"<>|]/g, '')
-      .slice(0, 80);
+    const videoUrl = video.url;
+    const videoTitle = video.title;
+    const duration = video.timestamp;
+    const views = video.views.toLocaleString();
+    const thumbnail = video.thumbnail;
 
-    /* ─────── Info Message ─────── */
+    // Tuma ujumbe wa taarifa ya video iliyopatikana
     await sock.sendMessage(
       chatId,
       {
-        text: `🎵 *${videoTitle}*\n⏱ Duration: ${durationText}`,
+        text: `🎵 *${videoTitle}*\n\n` +
+              `⏱ *Muda:* ${duration}\n` +
+              `👁 *Views:* ${views}\n` +
+              `🔗 *Link:* ${videoUrl}\n\n` +
+              `_Napakua audio, tafadhali subiri..._`,
         contextInfo: {
           externalAdReply: {
             title: videoTitle,
@@ -122,84 +80,84 @@ async function songCommand(sock, chatId, message) {
       { quoted: message }
     );
 
-    /* ─────── Send Audio ─────── */
+    /* ─────── Fast MP3 Fetching ─────── */
+    const downloadUrl = await fetchMp3Fast(videoUrl);
+
+    // Safisha jina la file lisiwe na alama zisizoruhusiwa
+    const safeName = videoTitle.replace(/[\\/:*?"<>|]/g, '').slice(0, 80);
+
+    /* ─────── Tuma Audio File ─────── */
     await sock.sendMessage(
       chatId,
       {
         audio: { url: downloadUrl },
         mimetype: 'audio/mpeg',
         fileName: `${safeName}.mp3`,
-        ptt: false
+        ptt: false // Badilisha kuwa true kama unataka itume kama Voice Note
       },
       { quoted: message }
     );
 
+    // Reaction: Imekamilika
     try {
-      await sock.sendMessage(chatId, {
-        react: { text: '✅', key: message.key }
-      });
-    } catch {}
+      await sock.sendMessage(chatId, { react: { text: '✅', key: message.key } });
+    } catch (e) {}
 
   } catch (err) {
-    console.error('❌ PLAY ERROR:', err);
+    console.error('❌ ERROR KATIKA SONG COMMAND:', err);
     await sock.sendMessage(
       chatId,
-      { text: '❌ Failed to play this song. Try again.' },
+      { text: '❌ Hitilafu imetokea wakati wa kupata audio. Jaribu tena baadae.' },
       { quoted: message }
     );
   }
 }
 
 /* ======================================================
-   FAST MULTI-API RACE (FIRST SUCCESS WINS)
+   Kazi ya Kutafuta Download Link (Race Condition)
 ====================================================== */
 async function fetchMp3Fast(videoUrl) {
-  const requests = MP3_APIS.map(fn =>
-    axios
-      .get(fn(videoUrl), { timeout: 20000 })
-      .then(res => extractDownloadUrl(res.data))
-      .catch(() => null)
-  );
+  // Tunatuma maombi kwenye API zote kwa mpigo
+  const requests = MP3_APIS.map(async (fn) => {
+    try {
+      const response = await axios.get(fn(videoUrl), { timeout: 20000 });
+      const link = extractDownloadUrl(response.data);
+      if (link && link.startsWith('http')) return link;
+      return null;
+    } catch (error) {
+      return null;
+    }
+  });
 
+  // Tunachukua link ya kwanza itakayopatikana
   const results = await Promise.all(requests);
-  const url = results.find(u => u && u.startsWith('http'));
+  const finalLink = results.find(u => u !== null);
 
-  if (!url) throw new Error('All MP3 servers failed');
-  return url;
+  if (!finalLink) throw new Error('Mifumo yote imeshindwa kutoa audio.');
+  return finalLink;
 }
 
-/* ======================================================
-   RESPONSE PARSER (MULTI FORMAT)
-====================================================== */
+/**
+ * Extraction Logic ya aina mbalimbali za majibu (Responses)
+ */
 function extractDownloadUrl(data) {
   return (
-    data?.result?.download_url ||
-    data?.result?.url ||
-    data?.data?.download ||
-    data?.data?.url ||
-    data?.download ||
-    data?.url ||
+    data?.result?.download_url || 
+    data?.result?.url || 
+    data?.data?.download || 
+    data?.data?.url || 
+    data?.download || 
+    data?.url || 
     null
   );
 }
 
-/* ======================================================
-   HELPERS
-====================================================== */
+/**
+ * Pata neno lililoandikwa baada ya command
+ */
 function getArg(body) {
   const parts = body.trim().split(/\s+/);
   return parts.length > 1 ? parts.slice(1).join(' ') : null;
-}
-
-function isoToTime(iso) {
-  const m = iso.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
-  if (!m) return 'Unknown';
-  const h = +m[1] || 0;
-  const mnt = +m[2] || 0;
-  const s = +m[3] || 0;
-  return h
-    ? `${h}:${String(mnt).padStart(2, '0')}:${String(s).padStart(2, '0')}`
-    : `${mnt}:${String(s).padStart(2, '0')}`;
 }
 
 module.exports = songCommand;
