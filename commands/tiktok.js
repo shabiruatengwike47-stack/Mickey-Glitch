@@ -1,5 +1,6 @@
 const axios = require('axios');
 const { getBuffer } = require('../lib/myfunc');
+const logger = require('../lib/logger');
 
 const AXIOS_DEFAULTS = {
     timeout: 60000,
@@ -131,53 +132,74 @@ async function tiktokCommand(sock, chatId, message) {
         const query = text.split(' ').slice(1).join(' ').trim();
 
         if (!query) {
+            logger.warning('📝', 'No TikTok link provided');
             await sock.sendMessage(chatId, { text: '⚠️ Usage: .tiktok <tiktok link>' }, { quoted: message });
             return;
         }
+
+        logger.info('🎬', `TikTok request: ${query.substring(0, 50)}...`);
 
         // React to show we're processing
         await sock.sendMessage(chatId, { react: { text: '🔍', key: message.key } });
 
         // Validate URL
         if (!query.startsWith('http://') && !query.startsWith('https://')) {
-            await sock.sendMessage(chatId, { text: 'Please provide a valid URL (starting with http(s)).' }, { quoted: message });
+            logger.warning('❌', 'Invalid URL format');
+            await sock.sendMessage(chatId, { text: '❌ Please provide a valid URL (starting with http(s)).' }, { quoted: message });
             await sock.sendMessage(chatId, { react: { text: '❌', key: message.key } });
             return;
         }
 
         // Call API
+        logger.info('⏳', 'Downloading from TikTok...');
         const { url: videoUrl, meta } = await getTiktokDownload(query);
 
         if (!videoUrl) {
+            logger.error('❌', 'No video URL returned');
             throw new Error('No video URL returned from API');
         }
+
+        logger.info('✅', 'Video URL obtained');
 
         // Try to get thumbnail for nicer preview
         let thumbBuffer;
         try {
+            logger.debug('🖼️', 'Fetching thumbnail...');
             const potentialThumb = meta?.result?.thumbnail || meta?.result?.cover || meta?.data?.thumbnail || meta?.data?.cover;
             if (potentialThumb) thumbBuffer = await getBuffer(potentialThumb);
+            logger.debug('✅', 'Thumbnail loaded');
         } catch (e) {
-            thumbBuffer = null; // ignore
+            logger.warning('⚠️', `Thumbnail fetch failed: ${e?.message}`);
+            thumbBuffer = null;
         }
 
         // Update reaction to downloading
         await sock.sendMessage(chatId, { react: { text: '⬇️', key: message.key } });
 
         // Send video by URL
+        logger.info('📹', 'Sending TikTok video...');
         await sock.sendMessage(chatId, {
             video: { url: videoUrl },
             mimetype: 'video/mp4',
             fileName: 'tiktok.mp4',
-            caption: '*TikTok Download*',
+            caption: '🎬 *TikTok Download*\n\n> 𝙼𝚒𝚌𝚔𝚎𝚢 𝙶𝚕𝚒𝚝𝚌𝚑™',
             jpegThumbnail: thumbBuffer
         }, { quoted: message });
 
+        logger.success('✅', 'TikTok video sent successfully');
         await sock.sendMessage(chatId, { react: { text: '✅', key: message.key } });
 
     } catch (err) {
-        console.error('[TIKTOK] Error:', err?.message || err);
-        await sock.sendMessage(chatId, { text: '❌ Failed to download TikTok video: ' + (err?.message || 'Unknown error') }, { quoted: message });
+        logger.error('❌', `TikTok error: ${err?.message}`);
+        let errorMsg = '❌ Failed to download TikTok video: ' + (err?.message || 'Unknown error');
+        
+        if (err?.message?.includes('timeout')) {
+            errorMsg = '⏱️ Request timed out. TikTok might be slow or the link is invalid.';
+        } else if (err?.message?.includes('video')) {
+            errorMsg = '❌ Could not extract video. The link might be invalid or the video is private.';
+        }
+
+        await sock.sendMessage(chatId, { text: errorMsg }, { quoted: message });
         try { await sock.sendMessage(chatId, { react: { text: '❌', key: message.key } }); } catch (e) { /* ignore */ }
     }
 }
