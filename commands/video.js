@@ -143,7 +143,7 @@ async function tryGetVideoLink(youtubeUrl, titleForQuery = '') {
     
     throw new Error(`All ${VIDEO_DOWNLOAD_APIS.length} video APIs failed`);
 }
-}
+
 async function videoCommand(sock, chatId, message) {
     try {
         const text = message.message?.conversation || message.message?.extendedTextMessage?.text;
