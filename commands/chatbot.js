@@ -53,44 +53,47 @@ function extractMessageText(msg) {
 }
 
 async function callOpenAI(prompt, conversationHistory = []) {
+  if (!OPENAI_API_KEY) {
+    throw new Error('OpenAI API key not configured');
+  }
+
   try {
-    // Try first API
-    try {
-      const response = await fetch(`https://meta-api.zone.id/ai/chatgptfree?prompt=${encodeURIComponent(prompt)}&model=chatgpt4`, {
-        timeout: 15000
-      });
+    const messages = [
+      { role: 'system', content: SYSTEM_PROMPT },
+      ...conversationHistory.slice(-4),
+      { role: 'user', content: prompt }
+    ];
 
-      if (response.ok) {
-        const data = await response.json();
-        const reply = data.result || data.response || data.message || '';
-        if (reply.trim()) {
-          return reply.trim();
-        }
-      }
-    } catch (err) {
-      console.error('Meta API failed:', err.message);
-    }
-
-    // Fallback to second API
-    const response = await fetch(`https://api.srihub.store/ai/chatgpt?prompt=${encodeURIComponent(prompt)}&apikey=dew_DVTcyMksTDO8ZGxBvLAG0y9P8sIj6uRJXHHwWSW5`, {
-      timeout: 15000
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${OPENAI_API_KEY}`
+      },
+      body: JSON.stringify({
+        model: OPENAI_MODEL,
+        messages: messages,
+        max_tokens: 500,
+        temperature: 0.7
+      }),
+      signal: AbortSignal.timeout(15000)
     });
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));
-      throw new Error(`AI API error: ${error.error?.message || response.statusText}`);
+      throw new Error(`OpenAI API error: ${error.error?.message || response.statusText}`);
     }
 
     const data = await response.json();
-    const reply = data.result || data.response || data.message || data.data?.result || '';
+    const reply = data.choices?.[0]?.message?.content || '';
 
     if (!reply.trim()) {
-      throw new Error('Empty response from AI API');
+      throw new Error('Empty response from OpenAI');
     }
 
     return reply.trim();
   } catch (err) {
-    console.error('AI API call failed:', err.message);
+    console.error('OpenAI API call failed:', err.message);
     throw err;
   }
 }

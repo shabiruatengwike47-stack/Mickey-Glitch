@@ -22,8 +22,6 @@ const CONFIG = {
     API_TIMEOUT: 60000, // 60 seconds
     API_RETRY_COUNT: 3, // Retry attempts
     API_BASE_URL: "https://api.agatz.xyz/api/voiceover",
-    CHAT_API_1: "https://meta-api.zone.id/ai/chatgptfree",
-    CHAT_API_2: "https://api.srihub.store/ai/chatgpt",
     MENU_IMAGE: "https://files.catbox.moe/w6mzc7.jpg"
 };
 

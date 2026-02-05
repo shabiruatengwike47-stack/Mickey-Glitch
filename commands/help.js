@@ -8,7 +8,6 @@ const path = require('path');
 const os = require('os');
 const settings = require('../settings');
 const gTTS = require('gtts');
-const chalk = require('chalk');
 
 const EXCLUDE = ['help']; 
 const BANNER = 'https://water-billimg.onrender.com/1761205727440.png';
@@ -50,43 +49,26 @@ function getCommandDescription(filepath) {
 }
 
 /**
- * Reads the actual commands folder with console output
+ * Reads the actual commands folder
  */
 function listCommandFiles() {
   try {
-    if (!fs.existsSync(COMMANDS_DIR)) {
-      console.log(chalk.red('❌ Commands directory not found'));
-      return [];
-    }
-
-    console.log(chalk.cyan('📂 Scanning commands directory...'));
-    
-    const files = fs.readdirSync(COMMANDS_DIR).filter(file => file.endsWith('.js'));
-    console.log(chalk.blue(`📋 Found ${files.length} command files`));
-
-    let loadedCount = 0;
-    const commands = files
+    if (!fs.existsSync(COMMANDS_DIR)) return [];
+    return fs
+      .readdirSync(COMMANDS_DIR)
+      .filter(file => file.endsWith('.js'))
       .map(file => {
         const name = path.basename(file, '.js');
         const fp = path.join(COMMANDS_DIR, file);
-        const cmd = {
+        return {
           name,
           desc: getCommandDescription(fp),
         };
-        loadedCount++;
-        // Show progress every 10 commands
-        if (loadedCount % 10 === 0) {
-          console.log(chalk.yellow(`  ⏳ Loaded ${loadedCount}/${files.length} commands...`));
-        }
-        return cmd;
       })
       .filter(cmd => !EXCLUDE.includes(cmd.name))
       .sort((a, b) => a.name.localeCompare(b.name));
-
-    console.log(chalk.green(`✅ Successfully loaded ${commands.length} commands (${files.length - commands.length} excluded)\n`));
-    return commands;
   } catch (err) {
-    console.error(chalk.red("❌ Error reading commands folder:"), err.message);
+    console.error("Error reading commands folder:", err);
     return [];
   }
 }
@@ -125,25 +107,18 @@ function buildHelpMessage(commands, opts = {}) {
 
 async function sendTTSGreeting(sock, chatId, message) {
   try {
-    console.log(chalk.yellow('  ⏳ Getting user display name...'));
     const displayName = await getBestDisplayName(sock, message);
-    
     const greeting = `Hello ${displayName}! I'm ${settings.botName}, your personal WhatsApp assistant. Here are all my available commands. Please use them responsibly and help keep our community safe and positive. Enjoy!`;
-    
-    console.log(chalk.yellow('  ⏳ Creating temp directory for audio...'));
     const assetsDir = path.join(__dirname, '..', 'temp');
     if (!fs.existsSync(assetsDir)) fs.mkdirSync(assetsDir);
     
     const filepath = path.join(assetsDir, `tts-${Date.now()}.mp3`);
-    
-    console.log(chalk.yellow('  ⏳ Generating TTS audio file...'));
     const gtts = new gTTS(greeting, 'en');
 
     await new Promise((resolve, reject) => {
       gtts.save(filepath, err => (err ? reject(err) : resolve()));
     });
-    
-    console.log(chalk.yellow('  ⏳ Sending audio message...'));
+
     await sock.sendMessage(chatId, {
       audio: { url: filepath },
       mimetype: 'audio/mpeg',
@@ -152,30 +127,23 @@ async function sendTTSGreeting(sock, chatId, message) {
 
     setTimeout(() => fs.unlinkSync(filepath), 5000);
   } catch (err) {
-    console.error(chalk.red('❌ TTS Error:'), err.message);
+    console.error('TTS Error:', err);
   }
 }
 
 async function helpCommand(sock, chatId, message) {
   try {
-    console.log(chalk.cyan('📖 Help command requested'));
-    console.log(chalk.yellow('  ⏳ Generating help menu...'));
-
     const memUsed = (process.memoryUsage().rss / 1024 ** 3).toFixed(2);
     const memTotal = (os.totalmem() / 1024 ** 3).toFixed(2);
     const displayName = await getBestDisplayName(sock, message);
     
-    console.log(chalk.yellow('  ⏳ Loading all available commands...'));
     const commands = listCommandFiles();
-    
-    console.log(chalk.yellow('  ⏳ Building help message...'));
     const helpText = buildHelpMessage(commands, {
       ramUsed: memUsed,
       ramTotal: memTotal,
       name: displayName,
     });
 
-    console.log(chalk.yellow('  ⏳ Sending help message...'));
     await sock.sendMessage(chatId, {
       text: helpText,
       contextInfo: {
@@ -189,15 +157,12 @@ async function helpCommand(sock, chatId, message) {
         },
       },
     }, { quoted: message });
-    console.log(chalk.green('✅ Help menu sent'));
 
     // Send greeting
-    console.log(chalk.yellow('  ⏳ Generating TTS greeting...'));
     await sendTTSGreeting(sock, chatId, message);
-    console.log(chalk.green('✅ TTS greeting sent\n'));
 
   } catch (error) {
-    console.error(chalk.red('❌ Help Command Error:'), error.message);
+    console.error('Help Command Error:', error);
     await sock.sendMessage(chatId, { text: "Error generating help menu." });
   }
 }
