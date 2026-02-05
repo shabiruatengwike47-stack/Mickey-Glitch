@@ -1,75 +1,128 @@
 const axios = require('axios');
-const fs = require('fs');
-const path = require('path');
+const { prepareWAMessageMedia, generateWAMessageFromContent, proto } = require('@whiskeysockets/baileys');
 
 async function facebookCommand(sock, chatId, message) {
     try {
         const text = message.message?.conversation || message.message?.extendedTextMessage?.text || '';
         const url = text.split(' ').slice(1).join(' ').trim();
 
-        if (!url) {
-            return await sock.sendMessage(chatId, { text: 'Please provide a Facebook video URL. Example: .fb https://www.facebook.com/...' }, { quoted: message });
+        if (!url || !url.includes('facebook.com')) {
+            return await sock.sendMessage(chatId, { text: '❌ Tafadhali weka link ya Facebook.\nMfano: .fb https://www.facebook.com/video...' }, { quoted: message });
         }
 
-        if (!url.includes('facebook.com')) {
-            return await sock.sendMessage(chatId, { text: 'That is not a Facebook link.' }, { quoted: message });
+        await sock.sendMessage(chatId, { react: { text: '⏳', key: message.key } });
+
+        const apiKey = "dew_SHmZ6Kcc67WTZqLfC3GGC774gANCHhtfIudTPQak";
+        const apiUrl = `https://api.srihub.store/download/facebook?url=${encodeURIComponent(url)}&apikey=${apiKey}`;
+        
+        const res = await axios.get(apiUrl);
+        const data = res.data;
+
+        if (!data.status || !data.result) {
+            return await sock.sendMessage(chatId, { text: '❌ Imefeli kupata video. Hakikisha link ni sahihi.' }, { quoted: message });
         }
 
-        await sock.sendMessage(chatId, { react: { text: '🔄', key: message.key } });
+        const result = data.result;
+        const title = result.title || "Facebook Video";
+        const thumbnail = result.thumbnail || "https://i.imgur.com/Ou7969m.jpeg"; // Default image kama hakuna thumbnail
+        
+        // Tunatengeneza machaguo ya ubora (HD na SD)
+        const qualities = [];
+        if (result.media.video_hd) qualities.push({ label: 'High Quality (HD)', url: result.media.video_hd, id: 'hd' });
+        if (result.media.video_sd) qualities.push({ label: 'Standard Quality (SD)', url: result.media.video_sd, id: 'sd' });
 
-        // Call a simple downloader API and pick the first plausible video URL.
-        const apiUrl = `https://api.srihub.store/download/facebook?url=&apikey=dew_SHmZ6Kcc67WTZqLfC3GGC774gANCHhtfIudTPQak${encodeURIComponent(url)}`;
-        const res = await axios.get(apiUrl, { timeout: 20000, headers: { 'User-Agent': 'Mozilla/5.0' }, validateStatus: s => s >= 200 && s < 500 });
-        const data = res.data || {};
-
-        // Flatten possible locations for the direct video URL
-        const candidates = [];
-        if (data.result?.media?.video_hd) candidates.push(data.result.media.video_hd);
-        if (data.result?.media?.video_sd) candidates.push(data.result.media.video_sd);
-        if (data.result?.url) candidates.push(data.result.url);
-        if (data.result?.download) candidates.push(data.result.download);
-        if (data.result?.video) candidates.push(data.result.video);
-        if (data.data?.url) candidates.push(data.data.url);
-        if (Array.isArray(data.data)) candidates.push(...data.data.map(i => i.url).filter(Boolean));
-        if (data.url) candidates.push(data.url);
-        if (data.download) candidates.push(data.download);
-        if (data.video) candidates.push(typeof data.video === 'string' ? data.video : data.video?.url);
-
-        const fbvid = candidates.find(u => typeof u === 'string' && u.startsWith('http')) || null;
-        const title = data.title || data.result?.title || data.data?.title || 'Facebook Video';
-
-        if (!fbvid) {
-            return await sock.sendMessage(chatId, { text: '❌ Could not find a downloadable video URL. Try another link.' }, { quoted: message });
+        if (qualities.length === 0) {
+            return await sock.sendMessage(chatId, { text: '❌ Hakuna video inayoweza kupakuliwa.' }, { quoted: message });
         }
 
-        // Try to send by remote URL first
-        try {
-            await sock.sendMessage(chatId, { video: { url: fbvid }, mimetype: 'video/mp4', caption: title ? `📝 ${title}` : '' }, { quoted: message });
-            return;
-        } catch (err) {
-            console.error('Sending by URL failed, falling back to download:', err.message);
+        const cards = [];
+
+        for (const quality of qualities) {
+            let media;
+            try {
+                media = await prepareWAMessageMedia(
+                    { image: { url: thumbnail } },
+                    { upload: sock.waUploadToServer }
+                );
+            } catch (e) { console.error("Media upload error", e); }
+
+            cards.push({
+                header: proto.Message.InteractiveMessage.Header.create({
+                    ...(media || {}),
+                    title: `*${quality.label}*`,
+                    hasMediaAttachment: !!media,
+                }),
+                body: { text: `Bonyeza kitufe hapa chini kupakua video katika ubora wa ${quality.label}` },
+                footer: { text: "Loft Quantum Downloader" },
+                nativeFlowMessage: {
+                    buttons: [
+                        {
+                            name: "quick_reply",
+                            buttonParamsJson: JSON.stringify({
+                                display_text: `Pakua ${quality.id.toUpperCase()}`,
+                                id: `dl_fb_${quality.id}`
+                            })
+                        }
+                    ]
+                }
+            });
         }
 
-        // Fallback: download to temp file and send
-        const tmpDir = path.join(process.cwd(), 'tmp');
-        if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
-        const tempFile = path.join(tmpDir, `fb_${Date.now()}.mp4`);
+        const carouselMessage = generateWAMessageFromContent(
+            chatId,
+            {
+                viewOnceMessage: {
+                    message: {
+                        interactiveMessage: {
+                            body: { text: `🎬 *${title}*\n\nChagua ubora wa video unayotaka kupakua kwenye kadi hizi:` },
+                            carouselMessage: { cards, messageVersion: 1 }
+                        }
+                    }
+                }
+            },
+            { quoted: message }
+        );
 
-        const videoResp = await axios.get(fbvid, { responseType: 'stream', timeout: 60000, headers: { 'User-Agent': 'Mozilla/5.0', 'Referer': 'https://www.facebook.com/' } });
-        const writer = fs.createWriteStream(tempFile);
-        videoResp.data.pipe(writer);
-        await new Promise((resolve, reject) => { writer.on('finish', resolve); writer.on('error', reject); });
+        const sent = await sock.relayMessage(chatId, carouselMessage.message, {
+            messageId: carouselMessage.key.id
+        });
 
-        if (!fs.existsSync(tempFile) || fs.statSync(tempFile).size === 0) {
-            throw new Error('Downloaded file is empty');
-        }
+        // LISTENER YA BUTTON
+        const listener = async (m) => {
+            const mek = m.messages[0];
+            if (!mek.message) return;
 
-        await sock.sendMessage(chatId, { video: { url: tempFile }, mimetype: 'video/mp4', caption: title ? `📝 ${title}` : '' }, { quoted: message });
+            const buttonId = mek.message?.buttonsResponseMessage?.selectedButtonId || 
+                           mek.message?.templateButtonReplyMessage?.selectedId || 
+                           mek.message?.interactiveResponseMessage?.nativeFlowResponse?.paramsJson;
 
-        try { fs.unlinkSync(tempFile); } catch (e) { console.error('Temp cleanup failed', e.message); }
+            if (!buttonId) return;
+
+            const parsed = JSON.parse(buttonId);
+            const selectedId = parsed.id;
+
+            if (selectedId && selectedId.startsWith('dl_fb_')) {
+                const type = selectedId.replace('dl_fb_', ''); // 'hd' au 'sd'
+                const videoUrl = type === 'hd' ? result.media.video_hd : result.media.video_sd;
+
+                await sock.sendMessage(chatId, { react: { text: '📥', key: mek.key } });
+                
+                await sock.sendMessage(chatId, { 
+                    video: { url: videoUrl }, 
+                    mimetype: 'video/mp4', 
+                    caption: `✅ Hii hapa video yako ya Facebook (${type.toUpperCase()})\n\n🔥 *Title:* ${title}` 
+                }, { quoted: mek });
+
+                // Zima listener baada ya kazi kwisha
+                sock.ev.off('messages.upsert', listener);
+            }
+        };
+
+        sock.ev.on('messages.upsert', listener);
+
     } catch (error) {
-        console.error('Facebook command error:', error);
-        await sock.sendMessage(chatId, { text: 'An error occurred while processing the Facebook link.' }, { quoted: message });
+        console.error('FB Error:', error);
+        await sock.sendMessage(chatId, { text: '❌ Hitilafu imetokea kwenye mfumo.' });
     }
 }
 
