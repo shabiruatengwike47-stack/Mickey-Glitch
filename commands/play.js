@@ -1,97 +1,70 @@
 const axios = require('axios');
 const yts = require('yt-search');
-const config = require('../config.js');
-
-const OWNER_NAME = (config && config.OWNER_NAME) || process.env.OWNER_NAME || 'Mickey';
 
 /**
- * SONG COMMAND
+ * SONG COMMAND - Rahisi na Yenye Ufanisi
  */
 async function songCommand(sock, chatId, message) {
-  const textBody =
-    message.message?.conversation ||
-    message.message?.extendedTextMessage?.text ||
-    '';
-
-  // Extract the song name or link
-  const args = textBody.trim().split(/\s+/);
-  const query = args.length > 1 ? args.slice(1).join(' ') : null;
+  // 1. Pata maneno yaliyoandikwa baada ya command
+  const textBody = message.message?.conversation || message.message?.extendedTextMessage?.text || '';
+  const query = textBody.split(" ").slice(1).join(" ");
 
   if (!query) {
-    return sock.sendMessage(chatId, { text: '❌ Please provide a song name or YouTube link.' }, { quoted: message });
+    return sock.sendMessage(chatId, { text: '❌ Tafadhali andika jina la wimbo!' }, { quoted: message });
   }
 
   try {
-    // 1. React with Search Icon
-    try { await sock.sendMessage(chatId, { react: { text: '🔎', key: message.key } }); } catch {}
-
-    /* ─────── YouTube Search (Using yt-search) ─────── */
-    const searchResult = await yts(query);
-    const video = searchResult.videos[0]; // Get the first result
+    // 2. Search Video YouTube
+    const search = await yts(query);
+    const video = search.videos[0];
 
     if (!video) {
-      return sock.sendMessage(chatId, { text: '❌ No results found on YouTube.' }, { quoted: message });
+      return sock.sendMessage(chatId, { text: '❌ Wimbo haujapatikana!' }, { quoted: message });
     }
 
     const videoUrl = video.url;
-    const videoTitle = video.title;
-    const timestamp = video.timestamp;
-    const thumbnail = video.thumbnail;
-
-    // 2. Inform User
-    await sock.sendMessage(chatId, { text: `📥 Downloading: *${videoTitle}*...` }, { quoted: message });
-
-    /* ─────── Download API Logic ─────── */
-    // Using your specific API URL format
-    const apiEndpoint = `https://api-aswin-sparky.koyeb.app/api/downloader/song?search=${encodeURIComponent(videoUrl)}`;
     
-    const response = await axios.get(apiEndpoint, {
-      timeout: 30000, // Wait up to 30 seconds for the download link
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36'
-      }
-    });
+    // 3. React kuonyesha kazi imeanza
+    await sock.sendMessage(chatId, { react: { text: '⏳', key: message.key } });
 
-    // Extracting the download link from your specific API response
+    // 4. Download kutoka kwenye API yako
+    const apiEndpoint = `https://api-aswin-sparky.koyeb.app/api/downloader/song?search=${encodeURIComponent(videoUrl)}`;
+    const response = await axios.get(apiEndpoint);
+
+    // Kwenye API hii, link ya kudownload mara nyingi ipo kwenye: data.result.download_url
     const downloadUrl = response.data?.result?.download_url || response.data?.data?.download || response.data?.url;
 
     if (!downloadUrl) {
-      throw new Error('Could not retrieve a valid download link from the API.');
+      throw new Error('API imeshindwa kutoa link ya wimbo.');
     }
 
-    // Clean filename for WhatsApp stability
-    const safeName = videoTitle.replace(/[\\/:*?"<>|]/g, '').slice(0, 40);
-
-    /* ─────── Send Audio File ─────── */
+    // 5. Tuma Audio kwa mtumiaji
     await sock.sendMessage(
       chatId,
       {
         audio: { url: downloadUrl },
         mimetype: 'audio/mpeg',
-        fileName: `${safeName}.mp3`,
-        ptt: false, // Set to true if you want it to send as a voice note
+        fileName: `${video.title}.mp3`,
         contextInfo: {
           externalAdReply: {
-            title: videoTitle,
-            body: `Duration: ${timestamp} | Requested by ${OWNER_NAME}`,
-            thumbnailUrl: thumbnail,
+            title: video.title,
+            body: `Muda: ${video.timestamp}`,
+            thumbnailUrl: video.thumbnail,
+            sourceUrl: videoUrl,
             mediaType: 1,
-            showAdAttribution: true,
-            renderLargerThumbnail: true,
-            sourceUrl: videoUrl
+            renderLargerThumbnail: true
           }
         }
       },
       { quoted: message }
     );
 
-    // Final Success Reaction
-    try { await sock.sendMessage(chatId, { react: { text: '✅', key: message.key } }); } catch {}
+    // 6. Maliza kwa kuweka tiki
+    await sock.sendMessage(chatId, { react: { text: '✅', key: message.key } });
 
   } catch (err) {
-    console.error('❌ SONG ERROR:', err.message);
-    await sock.sendMessage(chatId, { text: `❌ Error: ${err.message || 'The download server is currently unavailable.'}` }, { quoted: message });
-    try { await sock.sendMessage(chatId, { react: { text: '❌', key: message.key } }); } catch {}
+    console.error('ERROR:', err);
+    await sock.sendMessage(chatId, { text: '❌ Hitilafu imetokea! Jaribu tena baadae.' }, { quoted: message });
   }
 }
 
