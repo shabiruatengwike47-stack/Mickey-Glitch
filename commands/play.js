@@ -1,5 +1,4 @@
 import axios from 'axios';
-import { OWNER_NAME } from '../config.js';
 
 const API_KEY = "AIzaSyDV11sdmCCdyyToNU-XRFMbKgAA4IEDOS0"; // YouTube Data API key
 const FASTAPI_URL = "https://api.danscot.dev/api"; // Your new API
