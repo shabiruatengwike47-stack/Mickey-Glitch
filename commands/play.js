@@ -2,15 +2,15 @@ const axios = require('axios');
 const yts = require('yt-search');
 
 /**
- * SONG COMMAND - MODERNISED (Srihub API Integrated)
- * Kazi: Kutafuta na kutuma audio kutoka YouTube kwa kutumia Srihub
+ * SONG COMMAND - DUAL API SYSTEM
+ * Inatumia API mbili (Aswin Sparky & Srihub) kuhakikisha wimbo unapatikana.
  */
 async function songCommand(sock, chatId, message) {
     const textBody = message.message?.conversation || message.message?.extendedTextMessage?.text || '';
     const query = textBody.split(" ").slice(1).join(" ");
 
     if (!query) {
-        return sock.sendMessage(chatId, { text: '❌ *Tafadhali andika jina la wimbo!* \n\nMfano: .song Bado Nakupenda' }, { quoted: message });
+        return sock.sendMessage(chatId, { text: '❌ *Tafadhali andika jina la wimbo!*' }, { quoted: message });
     }
 
     try {
@@ -21,47 +21,43 @@ async function songCommand(sock, chatId, message) {
         const video = search.videos[0];
 
         if (!video) {
-            return sock.sendMessage(chatId, { text: '❌ *Samahani, wimbo huo haujapatikana.*' }, { quoted: message });
+            return sock.sendMessage(chatId, { text: '❌ *Wimbo haujapatikana YouTube.*' }, { quoted: message });
         }
 
         const videoUrl = video.url;
         const videoTitle = video.title;
 
-        await sock.sendMessage(chatId, { text: `🎵 *Inatayarisha:* ${videoTitle}\n⏳ _Tafadhali subiri..._` }, { quoted: message });
+        await sock.sendMessage(chatId, { text: `🎵 *Wimbo:* ${videoTitle}\n⏳ _Inatafuta seva bora, tafadhali subiri..._` }, { quoted: message });
 
-        // 2. Orodha ya API (Srihub ikiwa ya kwanza)
+        // 2. API MBILI ZINAZOPIGA KAZI
         const apiKey = "dew_SHmZ6Kcc67WTZqLfC3GGC774gANCHhtfIudTPQak";
         const DOWNLOAD_APIS = [
-            `https://api.srihub.store/download/ytmp3?url=${encodeURIComponent(videoUrl)}&apikey=${apiKey}`,
-            `https://api.ryzendesu.vip/api/downloader/ytmp3?url=${encodeURIComponent(videoUrl)}`,
-            `https://api-aswin-sparky.koyeb.app/api/downloader/song?search=${encodeURIComponent(videoUrl)}`
+            `https://api-aswin-sparky.koyeb.app/api/downloader/song?search=${encodeURIComponent(videoUrl)}`, // API ya sasa
+            `https://api.srihub.store/download/ytmp3?url=${encodeURIComponent(videoUrl)}&apikey=${apiKey}`  // API mbadala
         ];
 
         let downloadUrl = null;
 
-        // 3. Mchakato wa kutafuta Link (Retry Logic)
+        // 3. Jaribu API ya kwanza, ikifeli nenda ya pili
         for (const api of DOWNLOAD_APIS) {
             try {
-                const response = await axios.get(api, { timeout: 45000 });
-                const data = response.data;
+                const response = await axios.get(api, { timeout: 40000 });
+                const resData = response.data;
 
-                // Kuchuja data kulingana na muundo wa SRIHUB (data.result.download_url)
-                // Na pia miundo mingine kama backup
-                downloadUrl = data?.result?.download_url || 
-                              data?.result?.url || 
-                              data?.url || 
-                              data?.data?.download;
+                // Kuchuja link kulingana na muundo wa kila API
+                downloadUrl = resData.data?.url || resData.result?.download_url || resData.url;
 
                 if (downloadUrl && downloadUrl.startsWith('http')) {
+                    console.log(`✅ Seva imefanikiwa: ${api.split('/')[2]}`);
                     break; 
                 }
             } catch (err) {
-                console.log(`Seva ya ${api.split('/')[2]} imeshindwa, tunajaribu nyingine...`);
+                console.log(`⚠️ Seva imegoma, inajaribu seva inayofuata...`);
                 continue; 
             }
         }
 
-        // 4. Kama tumepata Link, tuma Audio
+        // 4. Tuma Audio
         if (downloadUrl) {
             await sock.sendMessage(chatId, { react: { text: '📥', key: message.key } });
 
@@ -74,7 +70,7 @@ async function songCommand(sock, chatId, message) {
                     contextInfo: {
                         externalAdReply: {
                             title: videoTitle,
-                            body: `Msanii: ${video.author.name} | Mickey `,
+                            body: `Muda: ${video.timestamp} | Loft Quantum`,
                             thumbnailUrl: video.thumbnail,
                             sourceUrl: videoUrl,
                             mediaType: 1,
@@ -87,12 +83,12 @@ async function songCommand(sock, chatId, message) {
 
             await sock.sendMessage(chatId, { react: { text: '✅', key: message.key } });
         } else {
-            await sock.sendMessage(chatId, { text: '❌ *Imeshindwa kupata audio. Seva zote zimekataa.*' }, { quoted: message });
+            await sock.sendMessage(chatId, { text: '❌ *Samahani, seva zote ziko bize. Jaribu tena baadae.*' }, { quoted: message });
         }
 
     } catch (error) {
-        console.error('Song Command Error:', error);
-        await sock.sendMessage(chatId, { text: '❌ *Hitilafu ya kiufundi imetokea.*' }, { quoted: message });
+        console.error('Error:', error);
+        await sock.sendMessage(chatId, { text: '❌ *Hitilafu ya mfumo imetokea.*' }, { quoted: message });
     }
 }
 
