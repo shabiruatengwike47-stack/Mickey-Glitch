@@ -70,7 +70,7 @@ async function songCommand(sock, chatId, message) {
                     contextInfo: {
                         externalAdReply: {
                             title: videoTitle,
-                            body: `Muda: ${video.timestamp} | Loft Quantum`,
+                            body: `Muda: ${video.timestamp} | `,
                             thumbnailUrl: video.thumbnail,
                             sourceUrl: videoUrl,
                             mediaType: 1,
