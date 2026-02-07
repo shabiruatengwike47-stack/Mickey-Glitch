@@ -1,4 +1,5 @@
 const moment = require('moment-timezone');
+const owners = require('../data/owner.json');
 
 /**
  * Mickey Glitch Alive Command
@@ -29,9 +30,17 @@ const aliveCommand = async (conn, chatId, message) => {
 ┃ ✅ Ready to serve
 ┗━━━━━━━━━━━━━━━━━━━━━┛`.trim();
 
-    // 3. Safe Message Sending with Premium Context
+    // 3. Safe Message Sending with Premium Context + Buttons
+    const ownerNumber = (Array.isArray(owners) && owners[0]) ? owners[0] : '';
+    const templateButtons = [
+      { urlButton: { displayText: 'Contact Owner', url: `https://wa.me/${ownerNumber}` } },
+      { quickReplyButton: { displayText: 'Menu', id: 'menu' } }
+    ];
+
     await conn.sendMessage(chatId, {
       text: statusText,
+      footer: 'Choose an option below',
+      templateButtons,
       contextInfo: {
         isForwarded: true,
         forwardedNewsletterMessageInfo: {
