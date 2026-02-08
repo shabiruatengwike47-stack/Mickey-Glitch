@@ -5,13 +5,8 @@ const isAdmin = require('../lib/isAdmin');
 const { OPENAI_CONFIG } = require('../config');
 
 const STATE_PATH = path.join(__dirname, '..', 'data', 'chatbot.json');
-const OPENAI_API_KEY = OPENAI_CONFIG.apiKey;
-const OPENAI_MODEL = OPENAI_CONFIG.model || 'gpt-3.5-turbo';
+// Hizi API hazihitaji Key kwa sasa kulingana na muundo wako
 const SYSTEM_PROMPT = OPENAI_CONFIG.systemPrompt || 'You are a helpful WhatsApp chatbot assistant. Be concise and friendly.';
-
-if (!OPENAI_API_KEY) {
-  console.warn('⚠️ OPENAI_API_KEY not configured in config.js. Chatbot will not work.');
-}
 
 function loadState() {
   try {
@@ -52,55 +47,44 @@ function extractMessageText(msg) {
   ).trim();
 }
 
-async function callOpenAI(prompt, conversationHistory = []) {
-  if (!OPENAI_API_KEY) {
-    throw new Error('OpenAI API key not configured');
-  }
-
+/**
+ * AI CALLER - Inatumia API zako mpya
+ */
+async function callAI(userPrompt) {
   try {
-    const messages = [
-      { role: 'system', content: SYSTEM_PROMPT },
-      ...conversationHistory.slice(-4),
-      { role: 'user', content: prompt }
-    ];
+    // Tumeunganisha System Prompt na User Prompt kwa sababu API hizi ni rahisi
+    const fullPrompt = `${SYSTEM_PROMPT}\n\nUser: ${userPrompt}`;
+    
+    // Unaweza kubadilisha hapa kati ya Gemini au GPT
+    // API 1 (Gemini): https://gemini-1-5-flash.bjcoderx.workers.dev/?text=
+    // API 2 (GPT): https://gpt-3-5.apis-bj-devs.workers.dev/?prompt=
+    const apiUrl = `https://gemini-1-5-flash.bjcoderx.workers.dev/?text=${encodeURIComponent(fullPrompt)}`;
 
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${OPENAI_API_KEY}`
-      },
-      body: JSON.stringify({
-        model: OPENAI_MODEL,
-        messages: messages,
-        max_tokens: 500,
-        temperature: 0.7
-      }),
-      signal: AbortSignal.timeout(15000)
+    const response = await fetch(apiUrl, {
+      method: 'GET',
+      signal: AbortSignal.timeout(20000) // 20 seconds timeout
     });
 
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({}));
-      throw new Error(`OpenAI API error: ${error.error?.message || response.statusText}`);
-    }
+    if (!response.ok) throw new Error(`API Error: ${response.statusText}`);
 
     const data = await response.json();
-    const reply = data.choices?.[0]?.message?.content || '';
+    
+    // Kulingana na API nyingi za aina hii, jibu huwa kwenye .result au .response au .reply
+    // Kama API inarudisha text tupu, tutatumia data moja kwa moja
+    const reply = data.result || data.response || data.reply || (typeof data === 'string' ? data : null);
 
-    if (!reply.trim()) {
-      throw new Error('Empty response from OpenAI');
-    }
+    if (!reply) throw new Error('Nilipata data tupu kutoka kwa AI.');
 
     return reply.trim();
   } catch (err) {
-    console.error('OpenAI API call failed:', err.message);
+    console.error('AI call failed:', err.message);
     throw err;
   }
 }
 
 async function handleChatbotMessage(sock, chatId, message) {
   try {
-    if (!chatId || message.key?.fromMe || !OPENAI_API_KEY) return;
+    if (!chatId || message.key?.fromMe) return;
 
     const state = loadState();
     const isGroup = chatId.endsWith('@g.us');
@@ -112,30 +96,24 @@ async function handleChatbotMessage(sock, chatId, message) {
 
     await sock.sendPresenceUpdate('composing', chatId);
 
-    // Load conversation history
-    state.memory[chatId] = state.memory[chatId] || [];
-    const conversationHistory = state.memory[chatId].slice(-6);
-
-    // Get response from OpenAI
-    const reply = await callOpenAI(userText, conversationHistory);
-    let cleanReply = reply || "Sijakamatia jibu sasa... Jaribu tena baadaye.";
+    // Pata jibu kutoka kwenye API mpya
+    const reply = await callAI(userText);
+    let cleanReply = reply || "Samahani, seva imeshindwa kujibu kwa sasa.";
 
     await sock.sendMessage(chatId, { text: cleanReply }, { quoted: message });
 
-    // Update conversation history
+    // Kumbukumbu (Memory) - API hizi hazina memory ya asili, tunaiweka hapa kwa ajili ya file tu
+    state.memory[chatId] = state.memory[chatId] || [];
     state.memory[chatId].push({ role: 'user', content: userText });
     state.memory[chatId].push({ role: 'assistant', content: cleanReply });
-    
-    // Keep history manageable (keep last 20 messages)
-    if (state.memory[chatId].length > 20) {
-      state.memory[chatId] = state.memory[chatId].slice(-20);
-    }
-    
+
+    if (state.memory[chatId].length > 10) state.memory[chatId].slice(-10);
+
     saveState(state);
 
   } catch (err) {
     console.error('Chatbot error:', err);
-    const fallbacks = ["Kuna shida kidogo...", "Jaribu tena baadaye...", "Sijakamatia jibu...", "Network inakata..."];
+    const fallbacks = ["Network inasumbua kidogo...", "AI seva iko bize, jaribu tena.", "Sijakamatia jibu sasa hivi."];
     const randomFall = fallbacks[Math.floor(Math.random() * fallbacks.length)];
     await sock.sendMessage(chatId, { text: randomFall }, { quoted: message });
   }
@@ -152,24 +130,24 @@ async function groupChatbotToggleCommand(sock, chatId, message, args = '') {
       else if (sub === 'off') state.private = false;
       else return sock.sendMessage(chatId, { text: 'Tumia: .chatbot private on | off' });
       saveState(state);
-      return sock.sendMessage(chatId, { text: `Chatbot binafsi: **${state.private ? 'ON' : 'OFF'}**` });
+      return sock.sendMessage(chatId, { text: `Chatbot binafsi sasa ni: *${state.private ? 'ON' : 'OFF'}*` });
     }
 
-    if (!chatId.endsWith('@g.us')) return sock.sendMessage(chatId, { text: 'Tumia hii kwenye group.' });
+    if (!chatId.endsWith('@g.us')) return sock.sendMessage(chatId, { text: 'Amri hii ni ya kwenye makundi tu.' });
 
     const sender = message.key.participant || message.key.remoteJid;
     const { isSenderAdmin } = await isAdmin(sock, chatId, sender);
 
-    if (!isSenderAdmin && !message.key.fromMe) return sock.sendMessage(chatId, { text: 'Admins tu wanaweza.' });
+    if (!isSenderAdmin && !message.key.fromMe) return sock.sendMessage(chatId, { text: 'Admins pekee ndio wanaweza kubadili hili.' });
 
     if (arg === 'on') state.perGroup[chatId] = { enabled: true };
     else if (arg === 'off') state.perGroup[chatId] = { enabled: false };
     else return sock.sendMessage(chatId, { text: 'Tumia: .chatbot on | off' });
 
     saveState(state);
-    await sock.sendMessage(chatId, { text: `Group chatbot: **${state.perGroup[chatId].enabled ? 'ON' : 'OFF'}**` });
+    await sock.sendMessage(chatId, { text: `Group chatbot sasa ni: *${state.perGroup[chatId].enabled ? 'ON' : 'OFF'}*` });
   } catch {
-    await sock.sendMessage(chatId, { text: 'Amri haikufanikiwa.' });
+    await sock.sendMessage(chatId, { text: 'Amri imefeli.' });
   }
 }
 
