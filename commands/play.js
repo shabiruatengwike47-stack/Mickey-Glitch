@@ -2,8 +2,8 @@ const axios = require('axios');
 const yts = require('yt-search');
 
 /**
- * SONG COMMAND - CLEAN & FAST VERSION
- * Imeondolewa ujumbe wa seva na Hossam Ramzy.
+ * SONG COMMAND - HIGH SPEED EDITION
+ * Imeboreshwa: Maandishi yameondolewa, Speed imeongezwa (Concurrent Fetching).
  */
 async function songCommand(sock, chatId, message) {
     const textBody = message.message?.conversation || message.message?.extendedTextMessage?.text || '';
@@ -14,46 +14,47 @@ async function songCommand(sock, chatId, message) {
     }
 
     try {
-        // Reaction ya kuanza
+        // Reaction kuanza utafutaji
         await sock.sendMessage(chatId, { react: { text: '🔎', key: message.key } });
 
         const search = await yts(query);
         const video = search.videos[0];
 
         if (!video) {
-            return sock.sendMessage(chatId, { text: '❌ *Wimbo haujapatikana YouTube.*' }, { quoted: message });
+            return sock.sendMessage(chatId, { text: '❌ *Wimbo haujapatikana.*' }, { quoted: message });
         }
 
         const videoUrl = video.url;
         const videoTitle = video.title;
 
-        // Tuma ujumbe mfupi wa kuanza kupakua bila maneno mengi ya seva
-        await sock.sendMessage(chatId, { text: `🎵 *Inapakua:* ${videoTitle}...` }, { quoted: message });
-
+        // API Configuration
         const apiKey = "dew_SHmZ6Kcc67WTZqLfC3GGC774gANCHhtfIudTPQak";
-        const DOWNLOAD_APIS = [
+        const endpoints = [
             `https://api-aswin-sparky.koyeb.app/api/downloader/song?search=${encodeURIComponent(videoUrl)}`,
             `https://api.srihub.store/download/ytmp3?url=${encodeURIComponent(videoUrl)}&apikey=${apiKey}`
         ];
 
-        let downloadUrl = null;
+        // SPEED OPTIMIZATION: Tunatuma maombi kwenye API zote mbili kwa pamoja
+        // Ile itakayowahi kutoa jibu (First Response) ndiyo inatumika.
+        const fetchDownloadUrl = async (url) => {
+            const res = await axios.get(url, { timeout: 20000 });
+            const link = res.data?.data?.url || res.data?.result?.download_url || res.data?.url;
+            if (link && link.startsWith('http')) return link;
+            throw new Error('Invalid Link');
+        };
 
-        // Jaribu API kwa haraka
-        for (const api of DOWNLOAD_APIS) {
-            try {
-                const response = await axios.get(api, { timeout: 15000 });
-                const resData = response.data;
-                downloadUrl = resData.data?.url || resData.result?.download_url || resData.url;
-                if (downloadUrl && downloadUrl.startsWith('http')) break;
-            } catch (err) {
-                continue; 
-            }
+        let downloadUrl;
+        try {
+            // Inajaribu API zote kwa mpigo kuongeza speed
+            downloadUrl = await Promise.any(endpoints.map(url => fetchDownloadUrl(url)));
+        } catch (e) {
+            // Fallback: Kama Promise.any ikifeli (API zote zikigoma)
+            downloadUrl = null;
         }
 
         if (downloadUrl) {
             await sock.sendMessage(chatId, { react: { text: '📥', key: message.key } });
 
-            // Muonekano wako wa awali (Standard professional audio message)
             await sock.sendMessage(
                 chatId,
                 {
@@ -63,7 +64,7 @@ async function songCommand(sock, chatId, message) {
                     contextInfo: {
                         externalAdReply: {
                             title: videoTitle,
-                            body: `Muda: ${video.timestamp}`,
+                            body: `Mickey Glitch Music Player • ${video.timestamp}`,
                             thumbnailUrl: video.thumbnail,
                             sourceUrl: videoUrl,
                             mediaType: 1,
@@ -76,7 +77,7 @@ async function songCommand(sock, chatId, message) {
 
             await sock.sendMessage(chatId, { react: { text: '✅', key: message.key } });
         } else {
-            await sock.sendMessage(chatId, { text: '❌ *Samahani, seva zimefeli kupata wimbo huu.*' }, { quoted: message });
+            await sock.sendMessage(chatId, { text: '❌ *Seva zimeshindwa kupata wimbo huu kwa sasa.*' }, { quoted: message });
         }
 
     } catch (error) {
