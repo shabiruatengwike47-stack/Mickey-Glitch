@@ -1,19 +1,13 @@
 const moment = require('moment-timezone');
 const owners = require('../data/owner.json');
 
-/**
- * Mickey Glitch Alive Command
- * FIX: Cannot read properties of undefined (reading 'fromMe')
- */
 const aliveCommand = async (conn, chatId, message) => {
   try {
-    // 1. Safe Name & Data Retrieval
     const name = message.pushName || (conn.user && conn.user.name) || 'User';
     const uptime = clockString(process.uptime() * 1000);
     const date = moment.tz('Africa/Nairobi').format('DD/MM/YYYY');
     const time = moment.tz('Africa/Nairobi').format('HH:mm:ss');
 
-    // 2. Build Status Text - Premium Design
     const statusText = `╭━━━━━━━━━━━━━━━━━━━━━╮
 ┃  ✨ *MICKEY GLITCH* ✨
 ┃        v2.0.1
@@ -30,54 +24,69 @@ const aliveCommand = async (conn, chatId, message) => {
 ┃ ✅ Ready to serve
 ┗━━━━━━━━━━━━━━━━━━━━━┛`.trim();
 
-    // 3. Safe Message Sending with Premium Context + Buttons
     const ownerNumber = (Array.isArray(owners) && owners[0]) ? owners[0] : '';
-    const templateButtons = [
-      { urlButton: { displayText: 'Contact Owner', url: `https://wa.me/${ownerNumber}` } },
-      { quickReplyButton: { displayText: 'Menu', id: 'menu' } }
-    ];
 
-    await conn.sendMessage(chatId, {
-      text: statusText,
-      footer: 'Choose an option below',
-      templateButtons,
-      contextInfo: {
-        isForwarded: true,
-        forwardedNewsletterMessageInfo: {
-          newsletterJid: '120363398106360290@newsletter',
-          newsletterName: '🅼🅸🅲🅺🅴🆈 ɢʟɪᴛᴄʜ™',
-          serverMessageId: -1
-        },
-        externalAdReply: {
-          title: `⚡ MICKEY GLITCH v2.0.1`,
-          body: `🟢 Bot Status: Perfect Health`,
-          thumbnailUrl: 'https://water-billimg.onrender.com/1761205727440.png',
-          sourceUrl: 'https://whatsapp.com/channel/0029VajVv9sEwEjw9T9S0C26',
-          mediaType: 1,
-          renderLargerThumbnail: true
+    // NEW INTERACTIVE MESSAGE STRUCTURE
+    const interactiveMessage = {
+      viewOnceMessage: {
+        message: {
+          interactiveMessage: {
+            header: {
+              title: "⚡ MICKEY GLITCH v2.0.1",
+              hasMediaAttachment: true,
+              imageMessage: (await conn.prepareWAMessageMedia({ image: { url: 'https://water-billimg.onrender.com/1761205727440.png' } }, { upload: conn.waUploadToServer })).imageMessage
+            },
+            body: { text: statusText },
+            footer: { text: "Choose an option below" },
+            nativeFlowMessage: {
+              buttons: [
+                {
+                  "name": "cta_url",
+                  "buttonParamsJson": JSON.stringify({
+                    "display_text": "Contact Owner",
+                    "url": `https://wa.me/${ownerNumber}`,
+                    "merchant_url": `https://wa.me/${ownerNumber}`
+                  })
+                },
+                {
+                  "name": "quick_reply",
+                  "buttonParamsJson": JSON.stringify({
+                    "display_text": "Menu",
+                    "id": "menu"
+                  })
+                },
+                {
+                  "name": "cta_url",
+                  "buttonParamsJson": JSON.stringify({
+                    "display_text": "Join Channel",
+                    "url": "https://whatsapp.com/channel/0029VajVv9sEwEjw9T9S0C26"
+                  })
+                }
+              ]
+            },
+            contextInfo: {
+              forwardingScore: 999,
+              isForwarded: true,
+              mentionedJid: [message.sender],
+              forwardedNewsletterMessageInfo: {
+                newsletterJid: '120363398106360290@newsletter',
+                newsletterName: '🅼🅸🅲🅺🅴🆈 ɢʟɪᴛᴄʜ™',
+                serverMessageId: -1
+              }
+            }
+          }
         }
       }
-    }, { 
-      quoted: message 
-    });
+    };
+
+    await conn.relayMessage(chatId, interactiveMessage, { messageId: message.key.id });
 
   } catch (error) {
-    // If the error happens again, the bot won't crash
-    console.error('Alive Command Failure:', error.message);
-    
-    // Fallback message with improved design
-    await conn.sendMessage(chatId, { 
-      text: `╭━━━━━━━━━━━━━━━━╮
-┃ ✨ Bot Status
-┣━━━━━━━━━━━━━━━━┫
-┃ 🟢 Online
-┃ ✅ Operational
-┗━━━━━━━━━━━━━━━━┛` 
-    }, { quoted: message });
+    console.error('Alive Command Failure:', error);
+    await conn.sendMessage(chatId, { text: "⚠️ Error showing alive menu. Bot is online." }, { quoted: message });
   }
 };
 
-// Standard Uptime Helper
 function clockString(ms) {
   let h = isNaN(ms) ? '00' : Math.floor(ms / 3600000);
   let m = isNaN(ms) ? '00' : Math.floor((ms % 3600000) / 60000);
