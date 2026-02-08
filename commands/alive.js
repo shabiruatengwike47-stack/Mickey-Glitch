@@ -16,7 +16,7 @@ const aliveCommand = async (conn, chatId, message) => {
 
     // 2. Premium Status UI (Text-Based Design)
     const statusText = `
-*───〔 ⚡ MICKEY GLITCH v2.0.1 〕───*
+*───〔 ⚡ MICKEY GLITCH v3.1.0 〕───*
 
 👤 *USER:* ${name}
 🚀 *STATUS:* All Systems Operational
