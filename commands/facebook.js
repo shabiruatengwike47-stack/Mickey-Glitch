@@ -12,8 +12,8 @@ async function facebookCommand(sock, chatId, message) {
         // React kuonyesha bot inafanyia kazi link
         await sock.sendMessage(chatId, { react: { text: '⏳', key: message.key } });
 
-        const apiKey = "dew_SHmZ6Kcc67WTZqLfC3GGC774gANCHhtfIudTPQak";
-        const apiUrl = `https://api.srihub.store/download/facebook?url=${encodeURIComponent(url)}&apikey=${apiKey}`;
+        
+        const apiUrl = `https://api-aswin-sparky.koyeb.app/api/downloader/fbdl?url=${encodeURIComponent(url)}`;
         
         const res = await axios.get(apiUrl, { timeout: 25000 });
         const data = res.data;
