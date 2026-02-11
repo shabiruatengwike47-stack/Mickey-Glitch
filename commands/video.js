@@ -67,11 +67,13 @@ async function videoCommand(sock, chatId, message) {
         const text = message.message?.conversation || message.message?.extendedTextMessage?.text;
         const searchQuery = text.split(' ').slice(1).join(' ').trim();
 
-
         if (!searchQuery) {
-            await sock.sendMessage(chatId, { text: 'What video do you want to download?' }, { quoted: message });
+            await sock.sendMessage(chatId, { text: '❌ What video do you want to download?' }, { quoted: message });
             return;
         }
+
+        // React emoji: Searching
+        await sock.sendMessage(chatId, { react: { text: '🔎', key: message.key } });
 
         // Determine if input is a YouTube link
         let videoUrl = '';
@@ -91,18 +93,9 @@ async function videoCommand(sock, chatId, message) {
             videoThumbnail = videos[0].thumbnail;
         }
 
-        // Send thumbnail immediately
-        try {
-            const ytId = (videoUrl.match(/(?:youtu\.be\/|v=)([a-zA-Z0-9_-]{11})/) || [])[1];
-            const thumb = videoThumbnail || (ytId ? `https://i.ytimg.com/vi/${ytId}/sddefault.jpg` : undefined);
-            const captionTitle = videoTitle || searchQuery;
-            if (thumb) {
-                await sock.sendMessage(chatId, {
-                    image: { url: thumb },
-                    caption: `*${captionTitle}*\nDownloading...`
-                }, { quoted: message });
-            }
-        } catch (e) { console.error('[VIDEO] thumb error:', e?.message || e); }
+        // Extract YouTube ID for thumbnail
+        const ytId = (videoUrl.match(/(?:youtu\.be\/|v=)([a-zA-Z0-9_-]{11})/) || [])[1];
+        const thumb = videoThumbnail || (ytId ? `https://i.ytimg.com/vi/${ytId}/sddefault.jpg` : undefined);
 
 
         // Validate YouTube URL
@@ -124,13 +117,33 @@ async function videoCommand(sock, chatId, message) {
             }
         }
 
-        // Send video directly using the download URL
+        // React emoji: Downloading
+        await sock.sendMessage(chatId, { react: { text: '📥', key: message.key } });
+
+        const finalTitle = videoData.title || videoTitle || 'Video';
+        const finalThumbnail = videoData.thumbnail || thumb;
+        const qualityInfo = videoData.quality ? ` (${videoData.quality}p)` : '';
+
+        // Send video with improved thumbnail and metadata
         await sock.sendMessage(chatId, {
             video: { url: videoData.download },
             mimetype: 'video/mp4',
-            fileName: `${videoData.title || videoTitle || 'video'}.mp4`,
-            caption: `*${videoData.title || videoTitle || 'Video'}*\n\n> *Mickey Glitch*`
+            fileName: `${finalTitle}.mp4`,
+            caption: `✅ *${finalTitle}*${qualityInfo}`,
+            contextInfo: {
+                externalAdReply: {
+                    title: finalTitle,
+                    body: 'Mickey Glitch Video Downloader',
+                    thumbnailUrl: finalThumbnail,
+                    sourceUrl: videoUrl,
+                    mediaType: 2,
+                    renderLargerThumbnail: true
+                }
+            }
         }, { quoted: message });
+
+        // React emoji: Complete
+        await sock.sendMessage(chatId, { react: { text: '✅', key: message.key } });
 
 
     } catch (error) {
