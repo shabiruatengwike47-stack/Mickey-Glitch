@@ -27,9 +27,9 @@ async function tryRequest(getter, attempts = 3) {
 async function getYupraVideoByUrl(youtubeUrl) {
     const apiUrl = `https://api-aswin-sparky.koyeb.app/api/downloader/ytv?url=${encodeURIComponent(youtubeUrl)}`;
     const res = await tryRequest(() => axios.get(apiUrl, AXIOS_DEFAULTS));
-    if (res?.data?.success && res?.data?.data?.download_url) {
+    if (res?.data?.status && res?.data?.data?.url) {
         return {
-            download: res.data.data.download_url,
+            download: res.data.data.url,
             title: res.data.data.title,
             thumbnail: res.data.data.thumbnail
         };
@@ -38,13 +38,28 @@ async function getYupraVideoByUrl(youtubeUrl) {
 }
 
 async function getOkatsuVideoByUrl(youtubeUrl) {
-    const apiUrl = `https://okatsu-rolezapiiz.vercel.app/downloader/ytmp4?url=${encodeURIComponent(youtubeUrl)}`;
+    const apiUrl = `https://api-aswin-sparky.koyeb.app/api/downloader/ytv?url=${encodeURIComponent(youtubeUrl)}`;
     const res = await tryRequest(() => axios.get(apiUrl, AXIOS_DEFAULTS));
-    // shape: { status, creator, url, result: { status, title, mp4 } }
-    if (res?.data?.result?.mp4) {
-        return { download: res.data.result.mp4, title: res.data.result.title };
+    // shape: { status, creator, data: { title, url } }
+    if (res?.data?.status && res?.data?.data?.url) {
+        return { download: res.data.data.url, title: res.data.data.title };
     }
-    throw new Error('Okatsu ytmp4 returned no mp4');
+    throw new Error('Okatsu ytmp4 returned no url');
+}
+
+async function getHansaVideoByUrl(youtubeUrl) {
+    const apiUrl = `https://api.srihub.store/download/ytmp4?url=${encodeURIComponent(youtubeUrl)}&apikey=dew_DVTcyMksTDO8ZGxBvLAG0y9P8sIj6uRJXHHwWSW5`;
+    const res = await tryRequest(() => axios.get(apiUrl, AXIOS_DEFAULTS));
+    // shape: { success, result: { title, thumbnail, download_url, quality } }
+    if (res?.data?.success && res?.data?.result?.download_url) {
+        return {
+            download: res.data.result.download_url,
+            title: res.data.result.title,
+            thumbnail: res.data.result.thumbnail,
+            quality: res.data.result.quality
+        };
+    }
+    throw new Error('Hansa returned no download_url');
 }
 
 async function videoCommand(sock, chatId, message) {
@@ -97,12 +112,16 @@ async function videoCommand(sock, chatId, message) {
             return;
         }
 
-        // Get video: try Yupra first, then Okatsu fallback
+        // Get video: try Yupra first, then Okatsu, then Hansa as fallback
         let videoData;
         try {
             videoData = await getYupraVideoByUrl(videoUrl);
         } catch (e1) {
-            videoData = await getOkatsuVideoByUrl(videoUrl);
+            try {
+                videoData = await getOkatsuVideoByUrl(videoUrl);
+            } catch (e2) {
+                videoData = await getHansaVideoByUrl(videoUrl);
+            }
         }
 
         // Send video directly using the download URL
