@@ -18,23 +18,15 @@ async function facebookCommand(sock, chatId, message) {
         const res = await axios.get(apiUrl, { timeout: 25000 });
         const data = res.data;
 
-        if (!data.success || !data.result || !data.result.result) {
+        if (!data.status || !data.data || !data.data.high) {
             return await sock.sendMessage(chatId, { text: '❌ API haijapata data za video hii.' }, { quoted: message });
         }
 
-        const videoInfo = data.result;
-        const videoList = data.result.result; 
-        const title = videoInfo.title || "Facebook Video";
+        const videoData = data.data;
+        const title = videoData.title || "Facebook Video";
+        const videoUrl = videoData.high || videoData.low;
 
-        // 1. Tafuta video ya 720p (HD) kwanza
-        let selectedVideo = videoList.find(v => v.quality.includes("720p") || v.quality.includes("HD"));
-
-        // 2. Kama 720p haipo, chukua video yoyote ya kwanza iliyopo (kawaida ni SD)
-        if (!selectedVideo) {
-            selectedVideo = videoList[0];
-        }
-
-        if (!selectedVideo || !selectedVideo.url) {
+        if (!videoUrl) {
             return await sock.sendMessage(chatId, { text: '❌ Imeshindwa kupata link ya kupakua.' }, { quoted: message });
         }
 
@@ -43,9 +35,9 @@ async function facebookCommand(sock, chatId, message) {
 
         // 3. Tuma video moja kwa moja
         await sock.sendMessage(chatId, { 
-            video: { url: selectedVideo.url }, 
+            video: { url: videoUrl }, 
             mimetype: 'video/mp4', 
-            caption: `✅ *Facebook HD Downloader*\n\n*Title:* ${title}\n*Quality:* ${selectedVideo.quality}`,
+            caption: `✅ *Facebook HD Downloader*\n\n*Title:* ${title}\n*Thumbnail:* ${videoData.thumbnail}`,
             fileName: `${title}.mp4`
         }, { quoted: message });
 
