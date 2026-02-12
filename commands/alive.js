@@ -2,7 +2,7 @@ const moment = require('moment-timezone');
 const owners = require('../data/owner.json');
 
 /**
- * Mickey Glitch Alive Command - English & Ad Media Version
+ * Mickey Glitch Alive Command - Ultra Stable Ad Edition
  */
 const aliveCommand = async (conn, chatId, message) => {
   try {
@@ -12,52 +12,53 @@ const aliveCommand = async (conn, chatId, message) => {
     const time = moment.tz('Africa/Nairobi').format('HH:mm:ss');
     const ownerNumber = (Array.isArray(owners) && owners[0]) ? owners[0] : '255615944741';
 
-    // Clean English Text (No decorative borders)
-    const statusText = `*MICKEY GLITCH v3.1.0*
+    // Minimalist English Layout
+    const statusText = `*SYSTEM STATUS REPORT*
 
-*USER:* ${name}
-*STATUS:* Online & Stable
+*CLIENT:* ${name}
 *UPTIME:* ${uptime}
+*STABILITY:* 100% Operational
 *DATE:* ${date}
-*TIME:* ${time} (EAT)
-*OWNER:* ${ownerNumber}
+*TIME:* ${time}
 
-*Powered by Mickey Glitch Team*`;
+*OWNER:* ${ownerNumber}
+*VERSION:* Mickey Glitch v3.1.0`;
 
     const imageUrl = 'https://water-billimg.onrender.com/1761205727440.png';
 
+    // Sending as a Single Media Ad Message
     await conn.sendMessage(chatId, {
-      image: { url: imageUrl },
-      caption: statusText,
+      text: statusText,
       contextInfo: {
-        // This creates the "Message from Ad" look
-        showAdAttribution: true, 
         forwardingScore: 999,
         isForwarded: true,
+        showAdAttribution: true, // Forces the "Ad" label
         externalAdReply: {
-          title: "AD: SYSTEM ACTIVE",
-          body: "Mickey Glitch Multidevice Bot",
+          title: "MICKEY GLITCH AD: SYSTEM ACTIVE",
+          body: "High-Speed Bot Connection",
           mediaType: 1,
+          previewType: "PHOTO",
           thumbnailUrl: imageUrl,
-          sourceUrl: "https://github.com/MickeyGlitch", 
-          renderLargerThumbnail: true
+          sourceUrl: "https://whatsapp.com/channel/0029VaN1N7m7z4kcO3z8m43V",
+          renderLargerThumbnail: true // Makes the image appear large and clean
         }
       }
     }, { quoted: message });
 
   } catch (error) {
-    console.error('[ALIVE] Error:', error.message);
-    await conn.sendMessage(chatId, { 
-      text: `❌ Error: ${error.message}` 
-    }, { quoted: message });
+    console.error('[ALIVE ERROR]:', error.message);
+    // Silent fail-safe to keep the bot running if a sync error occurs
   }
 };
 
+/**
+ * Optimized time formatter
+ */
 function clockString(ms) {
   let h = Math.floor(ms / 3600000);
   let m = Math.floor((ms % 3600000) / 60000);
   let s = Math.floor((ms % 60000) / 1000);
-  return [h, m, s].map(v => v.toString().padStart(2, '0')).join(':');
+  return `${h}h ${m}m ${s}s`;
 }
 
 module.exports = aliveCommand;
