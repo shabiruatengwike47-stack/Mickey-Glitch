@@ -1,39 +1,48 @@
 const moment = require('moment-timezone');
 
 const aliveCommand = async (conn, chatId, msg) => {
-  try {
-    const uptime = Math.floor(process.uptime());
-    const h = Math.floor(uptime / 3600);
-    const m = Math.floor((uptime % 3600) / 60);
+    try {
+        // 1. Fanya bot ionekane inaandika (Typing...)
+        await conn.sendPresenceUpdate('composing', chatId);
+        
+        const uptime = process.uptime();
+        const hours = Math.floor(uptime / 3600);
+        const minutes = Math.floor((uptime % 3600) / 60);
 
-    const statusText = `✦ *MICKEY GLITCH BOT* ✦
-    
-*Status* : Online ✅
-*Uptime* : ${h}h ${m}m
-*Version*: 3.2.6
+        const statusText = `*MICKDADY GLITCH V3* 🚀
+        
+*User*: ${msg.pushName}
+*Status*: Active 🟢
+*Uptime*: ${hours}h ${minutes}m
+*Ping*: ${Date.now() - msg.messageTimestamp * 1000}ms
 
-*BONYEZA PICHA HAPA CHINI:*`;
+_Mickey Glitch Bot sasa inatumia mfumo wa v3.2.0 wenye kasi zaidi. Andika .menu kuona amri zote._`;
 
-    await conn.sendMessage(chatId, {
-        text: statusText,
-        contextInfo: {
-            externalAdReply: {
-                title: "📜 BONYEZA HAPA KUPATA MENU",
-                body: "Mickey Glitch Bot - Stable & Fast",
-                mediaType: 1,
-                previewType: 0,
-                renderLargerThumbnail: true,
-                thumbnailUrl: 'https://water-billimg.onrender.com/1761205727440.png',
-                // Hapa unaweka command yako kama link (inafanya kazi baadhi ya simu)
-                sourceUrl: `https://wa.me/255615944741?text=.menu`
+        // 2. Tuma ujumbe wenye Kadi kubwa (AdReply)
+        await conn.sendMessage(chatId, {
+            text: statusText,
+            contextInfo: {
+                isForwarded: true,
+                forwardingScore: 999,
+                forwardedNewsletterMessageInfo: {
+                    newsletterJid: '120363398106360290@newsletter',
+                    newsletterName: '🅼🅸🅲🅺🅴𝚈',
+                    serverMessageId: 143
+                },
+                externalAdReply: {
+                    title: "ᴍɪᴄᴋᴇʏ ɢʟɪᴛᴄʜ ᴠ3 ᴏɴʟɪɴᴇ",
+                    body: "Click here to Join Support Channel",
+                    thumbnailUrl: 'https://water-billimg.onrender.com/1761205727440.png',
+                    sourceUrl: 'https://whatsapp.com/channel/0029VajVv9sEwEjw9T9S0C26',
+                    mediaType: 1,
+                    renderLargerThumbnail: true // Hii ndio siri ya muonekano mzuri
+                }
             }
-        }
-    }, { quoted: msg });
+        }, { quoted: msg });
 
-  } catch (err) {
-    console.error(err);
-    await conn.sendMessage(chatId, { text: "Online ✅" });
-  }
+    } catch (e) {
+        console.log(e);
+    }
 };
 
 module.exports = aliveCommand;
