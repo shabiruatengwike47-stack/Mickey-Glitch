@@ -1,99 +1,92 @@
 const moment = require('moment-timezone');
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 
-// ────────────────────────────────────────────────
-const CONFIG = {
-  BOT_NAME:    'Mickey Glitch',
-  VERSION:     '3.2.6',
-  DEFAULT_OWNER: '255615944741',
-  TIMEZONE:    'Africa/Nairobi',
-  THUMB_URL:   'https://water-billimg.onrender.com/1761205727440.png',
-  CHANNEL_URL: 'https://whatsapp.com/channel/0029VaN1N7m7z4kcO3z8m43V',
-  FOOTER:      '© Mickey Glitch Team • Stable & Fast'
-};
-
-/**
- * Format uptime
- */
-function formatUptime(seconds) {
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  const s = Math.floor(seconds % 60);
-  return `${h}h ${m}m ${s}s`;
-}
-
-/**
- * Alive / Status Command
- */
 const aliveCommand = async (conn, chatId, msg) => {
-  try {
-    const senderName = msg.pushName?.trim() || 'User';
-    const now = moment.tz(CONFIG.TIMEZONE);
-    const uptime = formatUptime(process.uptime());
-
-    // ─── [ TAFUTA COMMANDS ] ───
-    let totalCommands = 0;
     try {
-        // Angalia folder la commands (relative to this file)
-        const cmdPath = path.join(__dirname, '../commands'); 
-        if (fs.existsSync(cmdPath)) {
-            const files = fs.readdirSync(cmdPath).filter(file => file.endsWith('.js'));
-            totalCommands = files.length;
-        }
-
-        // Angalia commands zilizoko kwenye main (kama zimesajiliwa kwenye global memory)
-        const allCmds = global.commands || global.events || {};
-        const globalCount = Object.keys(allCmds).length;
-
-        // Chukua kubwa zaidi kati ya folder au memory
-        if (globalCount > totalCommands) totalCommands = globalCount;
+        const senderName = msg.pushName || 'User';
+        const prefix = '.'; // Badilisha kama unatumia prefix tofauti
         
-        // Kama bado ni 0, jaribu kutafuta amri ndani ya main.js (dummy count kwa usalama)
-        if (totalCommands === 0) totalCommands = 100; // Fallback value
-    } catch (e) {
-        totalCommands = "Active"; 
-    }
+        // 1. Piga hesabu ya RAM
+        const totalRAM = (os.totalmem() / (1024 * 1024 * 1024)).toFixed(2);
+        const freeRAM = (os.freemem() / (1024 * 1024 * 1024)).toFixed(2);
+        const usedRAM = (totalRAM - freeRAM).toFixed(2);
 
-    const statusText = `✦ *${CONFIG.BOT_NAME} STATUS* ✦
+        // 2. Pata Uptime
+        const uptimeSeconds = process.uptime();
+        const hours = Math.floor(uptimeSeconds / 3600);
+        const minutes = Math.floor((uptimeSeconds % 3600) / 60);
+        const seconds = Math.floor(uptimeSeconds % 60);
+        const uptimeString = `${hours}h ${minutes}m ${seconds}s`;
 
-*Client* :  ${senderName}
-*Status* :  *Online* ✅
-*Uptime* :  ${uptime}
-*Commands*:  ${totalCommands}
-*Time* :  \`${now.format('DD MMM YYYY • HH:mm:ss')}\` EAT
-*Owner* :  wa.me/${CONFIG.DEFAULT_OWNER}
+        // 3. TAFUTA COMMANDS ZOTE (Auto-Read Folder)
+        const cmdFolder = path.join(__dirname, '../commands');
+        let commandsList = "";
+        let count = 0;
 
-→ *${CONFIG.BOT_NAME} v${CONFIG.VERSION}* – Running since last restart`;
+        if (fs.existsSync(cmdFolder)) {
+            const files = fs.readdirSync(cmdFolder).filter(file => file.endsWith('.js'));
+            count = files.length;
 
-    // Tuma ujumbe kwa kutumia muundo wa base yako (contextInfo)
-    await conn.sendMessage(chatId, {
-      text: statusText,
-      contextInfo: {
-        isForwarded: true,
-        forwardingScore: 999,
-        forwardedNewsletterMessageInfo: {
-            newsletterJid: '120363398106360290@newsletter',
-            newsletterName: '🅼🅸🅲🅺🅴𝚈',
-            serverMessageId: 101
-        },
-        externalAdReply: {
-          showAdAttribution: true,
-          title: `${CONFIG.BOT_NAME} ${CONFIG.VERSION}`,
-          body: `System Online | ${totalCommands} Commands`,
-          mediaType: 1,
-          thumbnailUrl: CONFIG.THUMB_URL,
-          sourceUrl: CONFIG.CHANNEL_URL,
-          renderLargerThumbnail: true
+            files.forEach(file => {
+                const cmdName = file.replace('.js', '');
+                let description = "No description available";
+
+                // Jaribu kusoma maelezo ndani ya kila file (kama yapo)
+                try {
+                    const content = fs.readFileSync(path.join(cmdFolder, file), 'utf8');
+                    // Inatafuta comment inayosema @description au maelezo ya kwanza
+                    const descMatch = content.match(/\/\/\s*(.*)/); 
+                    if (descMatch && descMatch[1].length < 50) {
+                        description = descMatch[1].trim();
+                    }
+                } catch (e) { }
+
+                commandsList += `┃ ◈ \`${prefix}${cmdName}\`\n┃ ╰┈ *${description}*\n`;
+            });
         }
-      }
-    }, { quoted: msg });
 
-  } catch (err) {
-    console.error('[ALIVE_ERROR]', err);
-    // Ikishindikana kabisa, tuma ujumbe rahisi
-    await conn.sendMessage(chatId, { text: `Mickey Glitch is Online ✅\nUptime: ${formatUptime(process.uptime())}` });
-  }
+        // 4. Jenga Ujumbe (Muundo uliouomba)
+        const finalMessage = `╭━━━〔 *𝙼𝚒𝚌𝚔𝚎𝚢 𝙶𝚕𝚒𝚝𝚌𝚑* 〕━━━┈⊷
+┃ 👑 *Owner:* Mickey
+┃ 👤 *User:* ${senderName}
+┃ ⏲️ *Uptime:* ${uptimeString}
+┃ 🛡️ *Mode:* public
+┃ 🧩 *Prefix:* [ ${prefix} ]
+┃ 🧠 *RAM:* ${usedRAM}GB / ${totalRAM}GB
+╰━━━━━━━━━━━━━━━━━━┈⊷
+
+╭━━━〔 *COMMAND LIST* 〕━━━┈⊷
+${commandsList}╰━━━━━━━━━━━━━━━━━━┈⊷
+*Total:* ${count} Commands`;
+
+        // 5. Tuma kwa Muonekano wa Kadi
+        await conn.sendMessage(chatId, {
+            text: finalMessage,
+            contextInfo: {
+                isForwarded: true,
+                forwardingScore: 999,
+                forwardedNewsletterMessageInfo: {
+                    newsletterJid: '120363398106360290@newsletter',
+                    newsletterName: '🅼🅸🅲🅺🅴𝚈',
+                    serverMessageId: 101
+                },
+                externalAdReply: {
+                    title: "ᴍɪᴄᴋᴇʏ ɢʟɪᴛᴄʜ ꜱʏꜱᴛᴇᴍ",
+                    body: `Active Commands: ${count}`,
+                    mediaType: 1,
+                    renderLargerThumbnail: true,
+                    thumbnailUrl: 'https://water-billimg.onrender.com/1761205727440.png',
+                    sourceUrl: 'https://whatsapp.com/channel/0029VajVv9sEwEjw9T9S0C26'
+                }
+            }
+        }, { quoted: msg });
+
+    } catch (e) {
+        console.error(e);
+        await conn.sendMessage(chatId, { text: "Error loading commands..." });
+    }
 };
 
 module.exports = aliveCommand;
