@@ -1,170 +1,106 @@
-// help.js
-// ──────────────────────────────────────────────────────────────
-//  Help – Dynamic Command Menu + TTS Greeting
-// ──────────────────────────────────────────────────────────────
-
+const moment = require('moment-timezone');
 const fs = require('fs');
 const path = require('path');
-const os = require('os');
-const settings = require('../settings');
-const gTTS = require('gtts');
+const owners = require('../data/owner.json');
 
-const EXCLUDE = ['help']; 
-const BANNER = 'https://water-billimg.onrender.com/1761205727440.png';
+// ────────────────────────────────────────────────
+const CONFIG = Object.freeze({
+  BOT_NAME:    'Mickey Glitch',
+  VERSION:     '3.2.6',
+  DEFAULT_OWNER: '255615944741',
+  TIMEZONE:    'Africa/Nairobi',
+  THUMB_URL:   'https://water-billimg.onrender.com/1761205727440.png',
+  CHANNEL_URL: 'https://whatsapp.com/channel/0029VaN1N7m7z4kcO3z8m43V',
+  FOOTER:      '© Mickey Glitch Team • Stable & Fast'
+});
 
 /**
- * Gets the actual path to the commands folder
+ * Format uptime
  */
-const COMMANDS_DIR = path.join(__dirname, '..', 'commands');
-
-async function getBestDisplayName(sock, message) {
-  try {
-    const jid = message?.key?.participant || message?.key?.remoteJid || '';
-    if (message?.pushName) return message.pushName;
-    return jid.split('@')[0] || 'User';
-  } catch {
-    return 'User';
-  }
+function formatUptime(seconds) {
+  if (!Number.isFinite(seconds) || seconds < 0) return '0 seconds';
+  const units = [
+    { value: Math.floor(seconds / 86400), unit: 'd' },
+    { value: Math.floor((seconds % 86400) / 3600), unit: 'h' },
+    { value: Math.floor((seconds % 3600) / 60), unit: 'm' },
+    { value: Math.floor(seconds % 60), unit: 's' }
+  ];
+  return units.filter(u => u.value > 0).map(u => `${u.value}${u.unit}`).join(' ') || '0s';
 }
 
-function getUptime() {
-  const sec = process.uptime();
-  const h = Math.floor(sec / 3600);
-  const m = Math.floor((sec % 3600) / 60);
-  const s = Math.floor(sec % 60);
-  return `${h}h ${m}m ${s}s`;
-}
-
-function getCommandDescription(filepath) {
+/**
+ * Alive / Status Command
+ */
+const aliveCommand = async (conn, chatId, msg) => {
   try {
-    const content = fs.readFileSync(filepath, 'utf8');
-    const lines = content.split(/\r?\n/).slice(0, 5);
-    for (const line of lines) {
-      const t = line.trim();
-      if (t.startsWith('//')) return t.replace(/^\/\/\s*/, '').trim();
-      if (t.startsWith('/*')) return t.replace(/^\/\*\s*/, '').replace(/\*\/$/, '').trim();
+    const senderName = msg.pushName?.trim() || 'User';
+    const ownerJid   = Array.isArray(owners) && owners[0] ? owners[0] : CONFIG.DEFAULT_OWNER;
+    const now       = moment.tz(CONFIG.TIMEZONE);
+    const uptime    = formatUptime(process.uptime());
+
+    // ─── [ SEHEMU YA KUTAFUTA COMMANDS ] ───
+    let totalCommands = 0;
+    try {
+        // 1. Inasoma folder la commands
+        const cmdPath = path.join(__dirname, '../commands');
+        if (fs.existsSync(cmdPath)) {
+            const files = fs.readdirSync(cmdPath).filter(file => file.endsWith('.js'));
+            totalCommands += files.length;
+        }
+        
+        // 2. Inakagua commands zilizoko kwenye main memory (global)
+        // Inatafuta majina ya kawaida yanayotumiwa kwenye base hii:
+        const globalCmds = global.commands || global.events || global.plugins || {};
+        const extraCount = Object.keys(globalCmds).length;
+        
+        // Kama amri kwenye folder tayari zipo kwenye global, tusizirudie
+        if (extraCount > totalCommands) {
+            totalCommands = extraCount;
+        }
+    } catch (e) {
+        console.warn('Command fetch error:', e.message);
     }
-  } catch {}
-  return 'No description available';
-}
+    // ───────────────────────────────────────
 
-/**
- * Reads the actual commands folder
- */
-function listCommandFiles() {
-  try {
-    if (!fs.existsSync(COMMANDS_DIR)) return [];
-    return fs
-      .readdirSync(COMMANDS_DIR)
-      .filter(file => file.endsWith('.js'))
-      .map(file => {
-        const name = path.basename(file, '.js');
-        const fp = path.join(COMMANDS_DIR, file);
-        return {
-          name,
-          desc: getCommandDescription(fp),
-        };
-      })
-      .filter(cmd => !EXCLUDE.includes(cmd.name))
-      .sort((a, b) => a.name.localeCompare(b.name));
-  } catch (err) {
-    console.error("Error reading commands folder:", err);
-    return [];
-  }
-}
+    const statusText = `✦ *${CONFIG.BOT_NAME} STATUS* ✦
 
-function buildHelpMessage(commands, opts = {}) {
-  const {
-    runtime = getUptime(),
-    mode = settings.commandMode || 'Public',
-    prefix = settings.prefix || '.',
-    ramUsed = '?',
-    ramTotal = '?',
-    name = 'User',
-  } = opts;
+*Client* :  ${senderName}
+*Status* :  *Online* ✅
+*Uptime* :  ${uptime}
+*Commands*:  ${totalCommands} Active
+*Time* :  \`${now.format('DD MMM YYYY • HH:mm:ss')}\` EAT
+*Owner* :  wa.me/${ownerJid}
 
-  let menu = `╭━━━〔 *${settings.botName || 'MICKEY GLITCH'}* 〕━━━┈⊷\n`;
-  menu += `┃ 👑 *Owner:* ${settings.botOwner || 'Mickey'}\n`;
-  menu += `┃ 👤 *User:* ${name}\n`;
-  menu += `┃ ⏲️ *Uptime:* ${runtime}\n`;
-  menu += `┃ 🛡️ *Mode:* ${mode}\n`;
-  menu += `┃ 🧩 *Prefix:* [ ${prefix} ]\n`;
-  menu += `┃ 🧠 *RAM:* ${ramUsed}GB / ${ramTotal}GB\n`;
-  menu += `╰━━━━━━━━━━━━━━━━━━┈⊷\n\n`;
+→ *${CONFIG.BOT_NAME} v${CONFIG.VERSION}* – Running since last restart`;
 
-  menu += `╭━━━〔 *COMMAND LIST* 〕━━━┈⊷\n`;
-  
-  commands.forEach((cmd) => {
-    menu += `┃ ◈ \`${prefix}${cmd.name}\`\n`;
-    menu += `┃ ╰┈ *${cmd.desc}*\n`;
-  });
-
-  menu += `╰━━━━━━━━━━━━━━━━━━┈⊷\n`;
-  menu += `*Total:* ${commands.length} Commands`;
-
-  return menu;
-}
-
-async function sendTTSGreeting(sock, chatId, message) {
-  try {
-    const displayName = await getBestDisplayName(sock, message);
-    const greeting = `Hello ${displayName}! I'm ${settings.botName}, your personal WhatsApp assistant. Here are all my available commands. Please use them responsibly and help keep our community safe and positive. Enjoy!`;
-    const assetsDir = path.join(__dirname, '..', 'temp');
-    if (!fs.existsSync(assetsDir)) fs.mkdirSync(assetsDir);
-    
-    const filepath = path.join(assetsDir, `tts-${Date.now()}.mp3`);
-    const gtts = new gTTS(greeting, 'en');
-
-    await new Promise((resolve, reject) => {
-      gtts.save(filepath, err => (err ? reject(err) : resolve()));
-    });
-
-    await sock.sendMessage(chatId, {
-      audio: { url: filepath },
-      mimetype: 'audio/mpeg',
-      ptt: true,
-    }, { quoted: message });
-
-    setTimeout(() => fs.unlinkSync(filepath), 5000);
-  } catch (err) {
-    console.error('TTS Error:', err);
-  }
-}
-
-async function helpCommand(sock, chatId, message) {
-  try {
-    const memUsed = (process.memoryUsage().rss / 1024 ** 3).toFixed(2);
-    const memTotal = (os.totalmem() / 1024 ** 3).toFixed(2);
-    const displayName = await getBestDisplayName(sock, message);
-    
-    const commands = listCommandFiles();
-    const helpText = buildHelpMessage(commands, {
-      ramUsed: memUsed,
-      ramTotal: memTotal,
-      name: displayName,
-    });
-
-    await sock.sendMessage(chatId, {
-      text: helpText,
+    await conn.sendMessage(chatId, {
+      text: statusText,
       contextInfo: {
-        externalAdReply: {
-          title: `${settings.botName} v${settings.version || '1.0'}`,
-          body: `Created by ${settings.botOwner}`,
-          thumbnailUrl: BANNER,
-          sourceUrl: 'https://github.com/Mickeydeveloper',
-          mediaType: 1,
-          renderLargerThumbnail: true,
+        forwardingScore: 999,
+        isForwarded: true,
+        forwardedNewsletterMessageInfo: {
+            newsletterJid: '120363398106360290@newsletter',
+            newsletterName: '🅼🅸🅲🅺🅴𝚈'
         },
-      },
-    }, { quoted: message });
+        externalAdReply: {
+          showAdAttribution: true,
+          title: `${CONFIG.BOT_NAME} ${CONFIG.VERSION}`,
+          body: `System Online | ${totalCommands} Commands`,
+          mediaType: 1,
+          previewType: 'PHOTO',
+          thumbnailUrl: CONFIG.THUMB_URL,
+          sourceUrl: CONFIG.CHANNEL_URL,
+          renderLargerThumbnail: true
+        }
+      }
+    }, { quoted: msg });
 
-    // Send greeting
-    await sendTTSGreeting(sock, chatId, message);
-
-  } catch (error) {
-    console.error('Help Command Error:', error);
-    await sock.sendMessage(chatId, { text: "Error generating help menu." });
+  } catch (err) {
+    console.error('[ALIVE_ERROR]', err);
+    conn.sendMessage(chatId, {
+      text: `⚠️ *${CONFIG.BOT_NAME}* is alive!\nUptime: ${formatUptime(process.uptime())}`
+    }, { quoted: msg }).catch(console.warn);
   }
-}
+};
 
-module.exports = helpCommand;
+module.exports = aliveCommand;
