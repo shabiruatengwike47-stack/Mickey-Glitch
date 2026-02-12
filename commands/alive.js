@@ -2,7 +2,7 @@ const moment = require('moment-timezone');
 const owners = require('../data/owner.json');
 
 /**
- * Mickey Glitch Alive Command - Professional Ad Version
+ * Mickey Glitch Alive Command - English & Ad Media Version
  */
 const aliveCommand = async (conn, chatId, message) => {
   try {
@@ -12,39 +12,44 @@ const aliveCommand = async (conn, chatId, message) => {
     const time = moment.tz('Africa/Nairobi').format('HH:mm:ss');
     const ownerNumber = (Array.isArray(owners) && owners[0]) ? owners[0] : '255615944741';
 
-    // Muonekano mpya bila mistari ya urembo
+    // Clean English Text (No decorative borders)
     const statusText = `*MICKEY GLITCH v3.1.0*
 
-*SISTEMU:* Iko Hewani
-*MTUMIAJI:* ${name}
-*MUDA:* ${uptime}
-*TAREHE:* ${date} | ${time}
-*MILIKI:* ${ownerNumber}
+*USER:* ${name}
+*STATUS:* Online & Stable
+*UPTIME:* ${uptime}
+*DATE:* ${date}
+*TIME:* ${time} (EAT)
+*OWNER:* ${ownerNumber}
 
 *Powered by Mickey Glitch Team*`;
 
     const imageUrl = 'https://water-billimg.onrender.com/1761205727440.png';
 
-    // Kutuma picha ikiwa na Message from Ad
     await conn.sendMessage(chatId, {
       image: { url: imageUrl },
       caption: statusText,
       contextInfo: {
+        // This creates the "Message from Ad" look
+        showAdAttribution: true, 
+        forwardingScore: 999,
+        isForwarded: true,
         externalAdReply: {
-          title: "MESSAGE FROM AD: MICKEY GLITCH",
-          body: "System Status: Online",
+          title: "AD: SYSTEM ACTIVE",
+          body: "Mickey Glitch Multidevice Bot",
           mediaType: 1,
           thumbnailUrl: imageUrl,
-          sourceUrl: "https://whatsapp.com/channel/0029VaN1N7m7z4kcO3z8m43V", // Unaweza kuweka link yako
-          renderLargerThumbnail: false,
-          showAdAttribution: true // Hii ndiyo inayoleta alama ya "Ad"
+          sourceUrl: "https://github.com/MickeyGlitch", 
+          renderLargerThumbnail: true
         }
       }
     }, { quoted: message });
 
   } catch (error) {
-    console.error('[ALIVE] Command Error:', error.message);
-    await conn.sendMessage(chatId, { text: `❌ Hitilafu: ${error.message}` }, { quoted: message });
+    console.error('[ALIVE] Error:', error.message);
+    await conn.sendMessage(chatId, { 
+      text: `❌ Error: ${error.message}` 
+    }, { quoted: message });
   }
 };
 
