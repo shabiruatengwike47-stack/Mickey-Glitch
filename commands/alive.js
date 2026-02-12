@@ -2,7 +2,7 @@ const moment = require('moment-timezone');
 const owners = require('../data/owner.json');
 
 /**
- * Mickey Glitch Alive Command - Interactive Button Version
+ * Mickey Glitch Alive Command - Professional Template Buttons
  */
 
 // Configuration Constants
@@ -13,6 +13,7 @@ const TIMEZONE = 'Africa/Nairobi';
 
 const aliveCommand = async (conn, chatId, message) => {
     try {
+        // Data Preparation
         const name = message.pushName || 'User';
         const owner = (Array.isArray(owners) && owners[0]) ? owners[0] : DEFAULT_OWNER;
         const uptime = formatUptime(process.uptime());
@@ -29,31 +30,31 @@ const aliveCommand = async (conn, chatId, message) => {
             `\n*Mickey Glitch ${BOT_VERSION}*`
         ].join('\n');
 
-        // Kutengeneza Buttons
-        const buttons = [
-            { buttonId: '.owner', buttonText: { displayText: '👤 Chat with Owner' }, type: 1 },
-            { buttonId: '.menu', buttonText: { displayText: '📜 View Menu' }, type: 1 },
-            { buttonId: '.ping', buttonText: { displayText: '⚡ Check Speed' }, type: 1 }
+        // Kutengeneza Template Buttons (Link, Call, and Quick Reply)
+        const templateButtons = [
+            { index: 1, urlButton: { displayText: '👤 Chat with Owner', url: `https://wa.me/${owner}` } },
+            { index: 2, callButton: { displayText: '📞 Call Owner', phoneNumber: `+${owner}` } },
+            { index: 3, quickReplyButton: { displayText: '📜 View Menu', id: '.menu' } },
+            { index: 4, quickReplyButton: { displayText: '❌ Close', id: '.cls' } }
         ];
 
         const messagePayload = {
             image: { url: IMAGE_URL },
             caption: caption,
-            footer: '© Powered by Mickey Glitch',
-            buttons: buttons,
-            headerType: 4,
+            footer: '© Powered by Mickey Glitch Team',
+            templateButtons: templateButtons,
             contextInfo: {
                 forwardingScore: 999,
                 isForwarded: true,
                 showAdAttribution: true,
                 externalAdReply: {
                     title: `MICKEY GLITCH ${BOT_VERSION}`,
-                    body: "System Active",
+                    body: "System Stability: 100%",
                     mediaType: 1,
                     previewType: "PHOTO",
                     thumbnailUrl: IMAGE_URL,
                     sourceUrl: "https://whatsapp.com/channel/0029VaN1N7m7z4kcO3z8m43V",
-                    renderLargerThumbnail: false
+                    renderLargerThumbnail: true
                 }
             }
         };
@@ -62,21 +63,24 @@ const aliveCommand = async (conn, chatId, message) => {
 
     } catch (error) {
         console.error(`[ALIVE_ERROR] ${new Date().toISOString()}:`, error.message);
-        // Fallback: Tuma text pekee kama button zikileta hitilafu
-        await conn.sendMessage(chatId, { text: `*Bot is Alive*\nUptime: ${formatUptime(process.uptime())}` });
     }
 };
 
+/**
+ * Formats seconds into a professional duration string
+ */
 const formatUptime = (seconds) => {
     const d = Math.floor(seconds / (3600 * 24));
     const h = Math.floor((seconds % (3600 * 24)) / 3600);
     const m = Math.floor((seconds % 3600) / 60);
     const s = Math.floor(seconds % 60);
+
     const parts = [];
     if (d > 0) parts.push(`${d}d`);
     if (h > 0) parts.push(`${h}h`);
     if (m > 0) parts.push(`${m}m`);
     parts.push(`${s}s`);
+    
     return parts.join(' ');
 };
 
