@@ -18,6 +18,20 @@ const aliveCommand = async (conn, chatId, msg) => {
 
 _Mickey Glitch Bot sasa inatumia mfumo wa v3.2.0 wenye kasi zaidi. Andika .menu kuona amri zote._`;
 
+       const buttons = [
+                    { buttonId: `${prefix}owner`, buttonText: { displayText: 'OWNER 👑' }, type: 1 },
+                    { buttonId: 'https://whatsapp.com/channel/0029VbAvB6k9sBI7O0j74q2N', buttonText: { displayText: '📢 JOIN CHANNEL' }, type: 2 }, 
+                ];
+
+                await socket.sendMessage(m.chat, {
+                    image: { url: 'https://o.uguu.se/jPorDbaz.jpg' },
+                    caption: menuText,
+                    footer: '© Gk-Phantom',
+                    buttons: buttons,
+                    headerType: 4
+                }, { quoted: m });
+                break;
+            }
         // 2. Tuma ujumbe wenye Kadi kubwa (AdReply)
         await conn.sendMessage(chatId, {
             text: statusText,
