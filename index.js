@@ -43,7 +43,9 @@ const channelRD = {
     name: '🅼🅸🅲🅺🅴🆈'
 }
 
-// Fake serverMessageId ili ionekane realistic
+const OWNER_JID = jidNormalizedUser(phoneNumber + '@s.whatsapp.net')
+
+// Fake serverMessageId
 const fakeServerMsgId = () => Math.floor(Math.random() * 10000) + 100
 
 // ────────────────[ STORE & SETTINGS ]───────────────────
@@ -63,14 +65,102 @@ setInterval(() => {
     }
 }, 30000)
 
-// ────────────────[ PAIRING ]───────────────────
-const pairingCode = !!phoneNumber || process.argv.includes("--pairing-code")
-const rl = process.stdin.isTTY ? readline.createInterface({ input: process.stdin, output: process.stdout }) : null
+// ────────────────[ CLEANUP SYSTEM ]───────────────────
+const TMP_FOLDERS = [
+    path.join(__dirname, 'tmp'),
+    path.join(__dirname, 'temp')
+    // You can add more folders here if needed
+]
 
-const question = (text) => {
-    if (rl) return new Promise(resolve => rl.question(text, resolve))
-    return Promise.resolve(settings.ownerNumber || phoneNumber)
+function deleteFolderRecursive(dirPath) {
+    if (!fs.existsSync(dirPath)) return
+    try {
+        fs.readdirSync(dirPath).forEach(file => {
+            const curPath = path.join(dirPath, file)
+            if (fs.lstatSync(curPath).isDirectory()) {
+                deleteFolderRecursive(curPath)
+            } else {
+                fs.unlinkSync(curPath)
+            }
+        })
+        fs.rmdirSync(dirPath)
+    } catch (err) {
+        console.log(chalk.yellow(`[cleanup] Could not fully remove ${dirPath} → ${err.message}`))
+    }
 }
+
+function cleanTempFolders() {
+    let cleanedCount = 0
+    let totalSizeBytes = 0
+
+    TMP_FOLDERS.forEach(folder => {
+        if (!fs.existsSync(folder)) {
+            fs.mkdirSync(folder, { recursive: true })
+            return
+        }
+
+        try {
+            const files = fs.readdirSync(folder)
+            cleanedCount += files.length
+
+            files.forEach(file => {
+                const filePath = path.join(folder, file)
+                try {
+                    const stats = fs.statSync(filePath)
+                    totalSizeBytes += stats.size
+                    fs.unlinkSync(filePath)
+                } catch (e) {
+                    // silent fail on locked files etc.
+                }
+            })
+
+            // Remove subfolders if any + recreate clean folder
+            deleteFolderRecursive(folder)
+            fs.mkdirSync(folder, { recursive: true })
+        } catch (err) {
+            console.log(chalk.yellow(`[cleanup] Error processing ${folder} → ${err.message}`))
+        }
+    })
+
+    return { cleanedCount, totalSizeBytes }
+}
+
+async function notifyCleanup(sock, result) {
+    if (!sock || !OWNER_JID) return
+
+    const sizeMB = (result.totalSizeBytes / (1024 * 1024)).toFixed(2)
+    const message = 
+`🧹 *AUTO CLEANUP COMPLETED*
+📅 ${new Date().toLocaleString('en-GB')} (EAT)
+🗑 Removed files: ${result.cleanedCount}
+💾 Freed ≈ ${sizeMB} MB`
+
+    try {
+        await sock.sendMessage(OWNER_JID, { text: message })
+        console.log(chalk.green('[cleanup] Notification sent to owner'))
+    } catch (err) {
+        console.log(chalk.yellow(`[cleanup] Failed to notify owner → ${err.message}`))
+    }
+}
+
+// ────────────────[ SCHEDULED CLEANUPS ]───────────────────
+
+// Every 4 hours
+setInterval(async () => {
+    console.log(chalk.cyan('[CLEANUP] Starting 4-hour cleanup...'))
+    const result = cleanTempFolders()
+    console.log(chalk.green(`[CLEANUP] Finished → removed \( {result.cleanedCount} files (\~ \){(result.totalSizeBytes / 1024 / 1024).toFixed(2)} MB)`))
+    if (global.sock) await notifyCleanup(global.sock, result)
+}, 4 * 60 * 60 * 1000) // 14400 seconds = 4 hours
+
+// Initial cleanup \~10 seconds after connect
+setTimeout(async () => {
+    if (!global.sock) return
+    console.log(chalk.cyan('[STARTUP] Performing initial temp cleanup...'))
+    const result = cleanTempFolders()
+    console.log(chalk.green(`[STARTUP CLEANUP] → removed \( {result.cleanedCount} files (\~ \){(result.totalSizeBytes / 1024 / 1024).toFixed(2)} MB)`))
+    await notifyCleanup(global.sock, result)
+}, 10000)
 
 // ────────────────[ MAIN ]───────────────────
 async function startXeonBotInc() {
@@ -96,6 +186,9 @@ async function startXeonBotInc() {
             },
             msgRetryCounterCache
         })
+
+        // Make socket globally accessible for cleanup notifications
+        global.sock = XeonBotInc
 
         XeonBotInc.ev.on('creds.update', saveCreds)
         store.bind(XeonBotInc.ev)
@@ -135,7 +228,6 @@ async function startXeonBotInc() {
 
                 const botJid = XeonBotInc.user.id.split(':')[0] + '@s.whatsapp.net'
 
-                // Welcome message (with fake forward)
                 const proCaption = `✨ *MICKEY GLITCH BOT* ✨
 🟢 *Online & Ready*
 📡 ${channelRD.name} | 💾 ${(process.memoryUsage().rss / 1024 / 1024).toFixed(2)} MB
@@ -161,7 +253,6 @@ async function startXeonBotInc() {
                     }
                 })
 
-                // Auto-follow channel
                 try {
                     await XeonBotInc.newsletterFollow(channelRD.id)
                     console.log(chalk.bgBlue.black('  📢  CHANNEL  📢  '), chalk.blue(`Auto-following: ${channelRD.name}`))
@@ -182,7 +273,7 @@ async function startXeonBotInc() {
             }
         })
 
-        // ──── sendMessage wrapper ── ALL bot messages appear forwarded from channel ────
+        // ──── Fake forwarded messages ────
         const originalSendMessage = XeonBotInc.sendMessage.bind(XeonBotInc)
 
         XeonBotInc.sendMessage = async (jid, content, options = {}) => {
@@ -202,8 +293,7 @@ async function startXeonBotInc() {
                 return originalSendMessage(jid, content, options)
             }
 
-            // Delay kidogo ili ionekane natural
-            const randomDelay = 400 + Math.floor(Math.random() * 1100)  // 400ms - 1500ms
+            const randomDelay = 400 + Math.floor(Math.random() * 1100)
             await delay(randomDelay)
 
             const fakeForwardContext = {
@@ -217,19 +307,23 @@ async function startXeonBotInc() {
                 }
             }
 
-            if (originalContext.quotedMessage) {
-                fakeForwardContext.quotedMessage = originalContext.quotedMessage
-            }
-            if (originalContext.mentionedJid) {
-                fakeForwardContext.mentionedJid = originalContext.mentionedJid
-            }
+            if (originalContext.quotedMessage) fakeForwardContext.quotedMessage = originalContext.quotedMessage
+            if (originalContext.mentionedJid) fakeForwardContext.mentionedJid = originalContext.mentionedJid
 
             options.contextInfo = fakeForwardContext
 
             return originalSendMessage(jid, content, options)
         }
 
-        // ──── Pairing code logic (CUSTOM: MICKDADY) ────
+        // ──── Pairing code logic ────
+        const pairingCode = !!phoneNumber || process.argv.includes("--pairing-code")
+        const rl = process.stdin.isTTY ? readline.createInterface({ input: process.stdin, output: process.stdout }) : null
+
+        const question = (text) => {
+            if (rl) return new Promise(resolve => rl.question(text, resolve))
+            return Promise.resolve(settings.ownerNumber || phoneNumber)
+        }
+
         if (pairingCode && !XeonBotInc.authState.creds.registered) {
             console.log(chalk.bgMagenta.white('  ⏳  PAIRING REQUIRED  ⏳  '))
             console.log(chalk.magenta('Tumia code maalum ili ku-pair bot'))
@@ -243,7 +337,6 @@ async function startXeonBotInc() {
 
             setTimeout(async () => {
                 try {
-                    // Custom pairing code - lazima iwe alphanumeric characters 8 tu
                     const customPairCode = "MICKDADY"
 
                     console.log(chalk.yellow('→ Inajaribu ku-pair na code: ') + chalk.cyan.bold(customPairCode))
