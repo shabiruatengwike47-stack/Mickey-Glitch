@@ -53,17 +53,18 @@ const store = require('./lib/lightweight_store')
 store.readFromFile()
 const settings = require('./settings')
 
-setInterval(() => store.writeToFile(), settings.storeWriteInterval || 10000)
+// Reduced write frequency for better performance
+setInterval(() => store.writeToFile(), settings.storeWriteInterval || 30000)
 
-// Memory watchdog
-setInterval(() => { if (global.gc) global.gc() }, 60000)
+// Memory watchdog - optimized for better performance
+setInterval(() => { if (global.gc) global.gc() }, 120000) // Check every 2 min instead of 1
 setInterval(() => {
     const used = process.memoryUsage().rss / 1024 / 1024
-    if (used > 450) {
-        console.log(chalk.bgRed.white('  ⚠️  MEMORY ALERT  ⚠️  '), chalk.red('RAM > 450MB → Restarting...'))
+    if (used > 500) { // Increased threshold for stability
+        console.log(chalk.bgRed.white('  ⚠️  MEMORY ALERT  ⚠️  '), chalk.red('RAM > 500MB → Restarting...'))
         process.exit(1)
     }
-}, 30000)
+}, 60000) // Check every 1 min instead of every 30s
 
 // ────────────────[ CLEANUP SYSTEM ]───────────────────
 const TMP_FOLDERS = [
@@ -145,22 +146,21 @@ async function notifyCleanup(sock, result) {
 
 // ────────────────[ SCHEDULED CLEANUPS ]───────────────────
 
-// Every 4 hours
+// Every 6 hours (reduced frequency for performance)
 setInterval(async () => {
-    console.log(chalk.cyan('[CLEANUP] Starting 4-hour cleanup...'))
+    console.log(chalk.cyan('[CLEANUP] Starting scheduled cleanup...'))
     const result = cleanTempFolders()
-    console.log(chalk.green(`[CLEANUP] Finished → removed \( {result.cleanedCount} files (\~ \){(result.totalSizeBytes / 1024 / 1024).toFixed(2)} MB)`))
-    if (global.sock) await notifyCleanup(global.sock, result)
-}, 4 * 60 * 60 * 1000) // 14400 seconds = 4 hours
+    if (result.cleanedCount > 0) console.log(chalk.green(`[CLEANUP] Removed ${result.cleanedCount} files (~${(result.totalSizeBytes / 1024 / 1024).toFixed(2)} MB)`))
+    if (global.sock && result.cleanedCount > 0) await notifyCleanup(global.sock, result)
+}, 6 * 60 * 60 * 1000) // 6 hours instead of 4
 
-// Initial cleanup \~10 seconds after connect
+// Initial cleanup after connect (delayed to avoid startup slowdown)
 setTimeout(async () => {
     if (!global.sock) return
-    console.log(chalk.cyan('[STARTUP] Performing initial temp cleanup...'))
+    console.log(chalk.cyan('[STARTUP] Initial cleanup...'))
     const result = cleanTempFolders()
-    console.log(chalk.green(`[STARTUP CLEANUP] → removed \( {result.cleanedCount} files (\~ \){(result.totalSizeBytes / 1024 / 1024).toFixed(2)} MB)`))
-    await notifyCleanup(global.sock, result)
-}, 10000)
+    if (result.cleanedCount > 0) console.log(chalk.green(`[CLEANUP] Removed ${result.cleanedCount} files (~${(result.totalSizeBytes / 1024 / 1024).toFixed(2)} MB)`))
+}, 20000) // Increased delay to 20s for faster startup
 
 // ────────────────[ MAIN ]───────────────────
 async function startXeonBotInc() {
@@ -293,9 +293,8 @@ async function startXeonBotInc() {
                 return originalSendMessage(jid, content, options)
             }
 
-            const randomDelay = 400 + Math.floor(Math.random() * 1100)
-            await delay(randomDelay)
-
+            // Minimal delay for faster response
+            if (Math.random() > 0.7) await delay(200)
             const fakeForwardContext = {
                 ...originalContext,
                 isForwarded: true,

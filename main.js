@@ -9,21 +9,22 @@ process.env.TMPDIR = customTemp;
 process.env.TEMP = customTemp;
 process.env.TMP = customTemp;
 
-// Auto-cleaner every 3 hours
+// 🧹 Optimized temp cleanup (every 6 hours instead of 3)
 setInterval(() => {
   fs.readdir(customTemp, (err, files) => {
     if (err) return;
-    for (const file of files) {
+    let cleanedCount = 0;
+    files.forEach(file => {
       const filePath = path.join(customTemp, file);
       fs.stat(filePath, (err, stats) => {
-        if (!err && Date.now() - stats.mtimeMs > 3 * 60 * 60 * 1000) {
-          fs.unlink(filePath, () => {});
+        if (!err && Date.now() - stats.mtimeMs > 6 * 60 * 60 * 1000) {
+          fs.unlink(filePath, () => { cleanedCount++ });
         }
       });
-    }
+    });
+    if (cleanedCount > 0) console.log(`🧹 Cleaned ${cleanedCount} old temp files`);
   });
-  console.log('🧹 Temp folder auto-cleaned');
-}, 3 * 60 * 60 * 1000);
+}, 6 * 60 * 60 * 1000); // 6 hours
 
 const settings = require('./settings');
 require('./config.js');
