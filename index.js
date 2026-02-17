@@ -165,6 +165,9 @@ setTimeout(async () => {
 // ────────────────[ MAIN ]───────────────────
 async function startXeonBotInc() {
     try {
+        // ──── Pairing code logic (moved to top) ────
+        const pairingCode = !!phoneNumber || process.argv.includes("--pairing-code")
+        
         const { version } = await fetchLatestBaileysVersion()
         const { state, saveCreds } = await useMultiFileAuthState(`./session`)
         const msgRetryCounterCache = new NodeCache()
@@ -314,8 +317,7 @@ async function startXeonBotInc() {
             return originalSendMessage(jid, content, options)
         }
 
-        // ──── Pairing code logic ────
-        const pairingCode = !!phoneNumber || process.argv.includes("--pairing-code")
+        // ──── Setup CLI interface ────
         const rl = process.stdin.isTTY ? readline.createInterface({ input: process.stdin, output: process.stdout }) : null
 
         const question = (text) => {
