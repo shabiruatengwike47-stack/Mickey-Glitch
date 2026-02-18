@@ -176,18 +176,40 @@ async function updateViaZip(sock, chatId, message, zipOverride) {
 
 async function restartProcess(sock, chatId, message) {
     try {
-        await sock.sendMessage(chatId, { text: '✅ Update complete! Restarting…' }, { quoted: message });
+        await sock.sendMessage(chatId, { text: '✅ Update complete! Bot restarting automatically...' }, { quoted: message });
     } catch {}
+    
+    // Give the message time to send
+    await new Promise(r => setTimeout(r, 1000));
+    
     try {
-        // Preferred: PM2
-        await run('pm2 restart all');
-        return;
+        // Try PM2 first
+        await run('pm2 restart all').catch(() => {});
     } catch {}
-    // Panels usually auto-restart when the process exits.
-    // Exit after a short delay to allow the above message to flush.
+
+    try {
+        // Try systemctl restart (Linux systemd services)
+        await run('systemctl restart bot').catch(() => {});
+    } catch {}
+
+    try {
+        // Try supervisor restart (alternative Linux system)
+        await run('supervisorctl restart bot').catch(() => {});
+    } catch {}
+
+    try {
+        // Write a restart flag file
+        const restartFlagPath = path.join(process.cwd(), '.restart');
+        fs.writeFileSync(restartFlagPath, Date.now().toString());
+    } catch {}
+
+    // For hosting platforms: use process.exit which triggers auto-restart
+    // Most platforms (Heroku, Netlify, Railway, Replit, etc) auto-restart on exit
     setTimeout(() => {
+        console.log('🔄 Initiating bot restart...');
+        // Exit with code 0 (success) - platform will auto-restart
         process.exit(0);
-    }, 500);
+    }, 1500);
 }
 
 async function updateCommand(sock, chatId, message, zipOverride) {
@@ -199,30 +221,34 @@ async function updateCommand(sock, chatId, message, zipOverride) {
         return;
     }
     try {
-        // Minimal UX
+        // Initial notification
         await sock.sendMessage(chatId, { text: '🔄 Updating the bot, please wait…' }, { quoted: message });
+        
         if (await hasGitRepo()) {
-            // silent
+            // Update via git
             const { oldRev, newRev, alreadyUpToDate, commits, files } = await updateViaGit();
-            // Short message only: version info
             const summary = alreadyUpToDate ? `✅ Already up to date: ${newRev}` : `✅ Updated to ${newRev}`;
-            console.log('[update] summary generated');
-            // silent
-            await run('npm install --no-audit --no-fund');
+            console.log('[update] summary:', summary);
+            
+            // Install dependencies
+            await run('npm install --no-audit --no-fund').catch(err => {
+                console.log('npm install skipped:', err.message);
+            });
+            
+            await sock.sendMessage(chatId, { text: `${summary}\n\nRestarting bot...` }, { quoted: message });
         } else {
+            // Update via zip
             const { copiedFiles } = await updateViaZip(sock, chatId, message, zipOverride);
-            // silent
+            console.log(`[update] copied ${copiedFiles.length} files`);
+            
+            await sock.sendMessage(chatId, { text: `✅ Files updated (${copiedFiles.length})\n\nRestarting bot...` }, { quoted: message });
         }
-        try {
-            const v = require('../settings').version || '';
-            await sock.sendMessage(chatId, { text: `✅ Update done. Restarting…` }, { quoted: message });
-        } catch {
-            await sock.sendMessage(chatId, { text: '✅ Restared Successfully\n Type .ping to check latest version.' }, { quoted: message });
-        }
+        
+        // Perform restart
         await restartProcess(sock, chatId, message);
     } catch (err) {
         console.error('Update failed:', err);
-        await sock.sendMessage(chatId, { text: `❌ Update failed:\n${String(err.message || err)}` }, { quoted: message });
+        await sock.sendMessage(chatId, { text: `❌ Update failed:\n${String(err.message || err).slice(0, 200)}` }, { quoted: message });
     }
 }
 
