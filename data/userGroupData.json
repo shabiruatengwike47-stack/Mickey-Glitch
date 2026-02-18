@@ -4,7 +4,9 @@
   "antilink": {},
   "antibadword": {},
   "warnings": {},
-  "sudo": [],
+  "sudo": [
+    "255615944741@s.whatsapp.net"
+  ],
   "welcome": {},
   "goodbye": {},
   "chatbot": {},
