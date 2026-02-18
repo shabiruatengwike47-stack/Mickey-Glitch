@@ -132,6 +132,18 @@ setInterval(() => {
     }
 }, 30000) // Check every 30 seconds
 
+// ✅ Periodic metadata cache cleanup - every 30 minutes
+setInterval(() => {
+    try {
+        const { clearAllMetadataCache, getCacheStats } = require('./lib/groupMetadataCache')
+        const stats = getCacheStats()
+        if (stats.cacheSize > 0) {
+            clearAllMetadataCache()
+            console.log(chalk.cyan(`[CACHE] Cleared ${stats.cacheSize} metadata cache entries`))
+        }
+    } catch (e) {}
+}, 30 * 60 * 1000) // Every 30 minutes
+
 // ────────────────[ CLEANUP SYSTEM ]───────────────────
 const TMP_FOLDERS = [
     path.join(__dirname, 'tmp'),
@@ -318,6 +330,14 @@ async function startXeonBotInc() {
 
         // Make socket globally accessible for cleanup notifications
         global.sock = XeonBotInc
+
+        // ✅ Apply metadata caching wrapper to prevent rate-limit errors
+        const { getGroupMetadataWithCache } = require('./lib/groupMetadataCache')
+        const originalGroupMetadata = XeonBotInc.groupMetadata.bind(XeonBotInc)
+        XeonBotInc.groupMetadata = async (chatId) => {
+            return getGroupMetadataWithCache(XeonBotInc, chatId)
+        }
+        console.log(chalk.cyan('[INIT] Group metadata caching enabled'))
 
         XeonBotInc.ev.on('creds.update', saveCreds)
         store.bind(XeonBotInc.ev)

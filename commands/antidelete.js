@@ -224,7 +224,19 @@ async function handleMessageRevocation(sock, revocationMessage) {
         const senderName = sender.split('@')[0];
         const deletedByName = deletedBy.split('@')[0];
         const isGroup = chatId.endsWith('@g.us');
-        const groupName = isGroup ? (await sock.groupMetadata(chatId)).subject : '';
+        
+        let groupName = '';
+        try {
+            if (isGroup) {
+                groupName = (await sock.groupMetadata(chatId)).subject;
+            }
+        } catch (err) {
+            // Silently ignore metadata errors
+            if (!err.message?.includes('rate-overlimit')) {
+                console.debug('Group metadata error:', err.message);
+            }
+            groupName = 'Unknown Group';
+        }
 
         const time = new Date().toLocaleString('en-US', {
             timeZone: 'Africa/Dar_es_Salaam',
