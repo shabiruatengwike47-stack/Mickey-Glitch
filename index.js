@@ -335,7 +335,7 @@ async function startXeonBotInc() {
         const { getGroupMetadataWithCache } = require('./lib/groupMetadataCache')
         const originalGroupMetadata = XeonBotInc.groupMetadata.bind(XeonBotInc)
         XeonBotInc.groupMetadata = async (chatId) => {
-            return getGroupMetadataWithCache(XeonBotInc, chatId)
+            return getGroupMetadataWithCache(originalGroupMetadata, chatId)
         }
         console.log(chalk.cyan('[INIT] Group metadata caching enabled'))
 
