@@ -125,6 +125,10 @@ const videoCommand = require('./commands/video');
 const sudoCommand = require('./commands/sudo');
 // pies command removed
 const stickercropCommand = require('./commands/stickercrop');
+const mickeyCommand = require('./commands/mickey');
+const miscCommand = require('./commands/misc');
+const animeCommand = require('./commands/anime');
+const piesAlias = require('./commands/pies-alias');
 const updateCommand = require('./commands/update');
 const checkUpdatesCommand = require('./commands/checkupdates');
 const { igsCommand } = require('./commands/igs');
@@ -561,15 +565,20 @@ async function handleMessages(sock, messageUpdate, printLog) {
         // We'll show typing indicator after command execution if needed
         let commandExecuted = false;
 
-        // PIN Security Check - Allow .pin command always, verify others
+        // PIN Security Check - Allow .pin command always, verify others (with error handling)
         const allowWithoutPin = userMessage.startsWith('.pin');
         if (!allowWithoutPin) {
-            const pinVerified = await checkPinVerification(senderId);
-            if (!pinVerified) {
-                await sock.sendMessage(chatId, { 
-                    text: `🔐 *PIN REQUIRED*\n\nThis bot requires PIN authorization.\n\n📌 Command: .pin <pincode>` 
-                }, { quoted: message });
-                return;
+            try {
+                const pinVerified = await checkPinVerification(senderId);
+                if (!pinVerified) {
+                    await sock.sendMessage(chatId, { 
+                        text: `🔐 *PIN REQUIRED*\n\nThis bot requires PIN authorization.\n\n📌 Command: .pin <pincode>` 
+                    }, { quoted: message });
+                    return;
+                }
+            } catch (pinError) {
+                // If PIN check fails, allow command to proceed (don't block on PIN errors)
+                console.error('PIN verification error:', pinError);
             }
         }
 
