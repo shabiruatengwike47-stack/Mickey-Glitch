@@ -12,6 +12,18 @@ const PhoneNumber = require('awesome-phonenumber')
 const { imageToWebp, videoToWebp, writeExifImg, writeExifVid } = require('./lib/exif')
 const { smsg, isUrl, generateMessageTag, getBuffer, getSizeMedia, fetch, sleep, reSize } = require('./lib/myfunc')
 
+// ────────────────[ SUPPRESS NODE WARNINGS ]───────────────────
+// Suppress non-critical Node.js and library warnings
+process.on('warning', (warning) => {
+    // Suppress specific warnings for cleaner logs
+    if (warning.code === 'MaxListenersExceededWarning' ||
+        warning.name === 'DeprecationWarning' ||
+        warning.message?.includes('ExperimentalWarning')) {
+        return
+    }
+    console.warn(warning)
+})
+
 const {
     default: makeWASocket,
     useMultiFileAuthState,
@@ -29,6 +41,8 @@ const {
     delay
 } = require("@whiskeysockets/baileys")
 
+const silentLogger = require('./lib/silentLogger')
+
 const NodeCache = require("node-cache")
 const pino = require("pino")
 const readline = require("readline")
@@ -41,25 +55,39 @@ let logBuffer = []
 const BUFFER_SIZE = 5
 const THROTTLE_MS = 2000
 
+// Session log patterns to filter
+const SESSION_LOG_PATTERNS = [
+    /Closing (open )?session/i,
+    /SessionEntry/i,
+    /chainKey/i,
+    /currentRatchet/i,
+    /registrationId/i,
+    /ephemeralKeyPair/i,
+    /lastRemoteEphemeralKey/i,
+    /indexInfo/i,
+    /pendingPreKey/i,
+    /baseKey/i,
+    /privKey/i,
+    /pubKey/i,
+    /rootKey/i,
+    /prekey bundle/i,
+    /_chains/i,
+    /messageKeys/i,
+    /<Buffer/i,
+    /merkleNode/i,
+    /preKeyId/i,
+    /signedPreKeyId/i,
+    /identityKeyPair/i
+]
+
 console.log = function(...args) {
     const message = args.join(' ')
     
-    // Filter out noisy session logs
-    if (message.includes('Closing session') || 
-        message.includes('SessionEntry') ||
-        message.includes('chainKey') ||
-        message.includes('currentRatchet') ||
-        message.includes('registrationId') ||
-        message.includes('ephemeralKeyPair') ||
-        message.includes('lastRemoteEphemeralKey') ||
-        message.includes('indexInfo') ||
-        message.includes('pendingPreKey') ||
-        message.includes('baseKey') ||
-        message.includes('privKey') ||
-        message.includes('pubKey') ||
-        message.includes('rootKey')) {
-        // Silently discard these logs
-        return
+    // Filter out noisy session logs - check all patterns
+    for (const pattern of SESSION_LOG_PATTERNS) {
+        if (pattern.test(message)) {
+            return // Silently discard these logs
+        }
     }
     
     // Call original log
@@ -69,12 +97,22 @@ console.log = function(...args) {
 console.error = function(...args) {
     const message = args.join(' ')
     
-    // Suppress noisy decryption errors
-    if (message.includes('Bad MAC') ||
-        message.includes('decrypt') ||
-        message.includes('Session error') ||
-        message.includes('rate-overlimit')) {
-        return
+    // Suppress noisy decryption errors and session logs
+    const errorPatterns = [
+        /Bad MAC/i,
+        /decrypt/i,
+        /Session error/i,
+        /rate-overlimit/i,
+        /Closing (open )?session/i,
+        /SessionEntry/i,
+        /prekey bundle/i,
+        /No session/i
+    ]
+    
+    for (const pattern of errorPatterns) {
+        if (pattern.test(message)) {
+            return
+        }
     }
     
     // Call original error
@@ -306,12 +344,12 @@ async function startXeonBotInc() {
 
         const XeonBotInc = makeWASocket({
             version,
-            logger: pino({ level: 'fatal' }),
+            logger: silentLogger,  // Use custom silent logger instead of pino
             printQRInTerminal: !pairingCode,
             browser: ["Ubuntu", "Chrome", "20.0.04"],
             auth: {
                 creds: state.creds,
-                keys: makeCacheableSignalKeyStore(state.keys, pino({ level: "fatal" }).child({ level: "fatal" })),
+                keys: makeCacheableSignalKeyStore(state.keys, silentLogger),  // Also use silent logger here
             },
             markOnlineOnConnect: true,
             getMessage: async (key) => {
@@ -324,8 +362,13 @@ async function startXeonBotInc() {
             syncFullHistory: false,
             retryRequestDelayMs: 100,
             maxMsgsInMemory: 50,  // Limit in-memory messages
+            maxVersionCheckAttempts: 1,  // Reduce version check retries to avoid session flapping
             fetchMessagesOnWaWebMessage: false,  // Don't auto-fetch old messages
-            shouldIgnoreJid: (jid) => jid.includes('@broadcast') || jid.includes('@newsletter')  // Ignore broadcast/newsletters
+            shouldIgnoreJid: (jid) => jid.includes('@broadcast') || jid.includes('@newsletter'),  // Ignore broadcast/newsletters
+            // ✅ Reduce prekey bundle frequency
+            getExpired: () => false,  // Don't request new prekeys aggressively
+            // ✅ Increase connection timeout to avoid quick reconnects
+            connectTimeoutMs: 60000  // 60 seconds instead of default
         })
 
         // Make socket globally accessible for cleanup notifications
@@ -353,19 +396,42 @@ async function startXeonBotInc() {
                     return
                 }
 
-                await handleMessages(XeonBotInc, chatUpdate, true)
+                // Retry logic for message handling during session transitions
+                let retries = 0
+                const maxRetries = 2
+                
+                while (retries < maxRetries) {
+                    try {
+                        await handleMessages(XeonBotInc, chatUpdate, true)
+                        break
+                    } catch (err) {
+                        // Silently ignore decryption errors (Bad MAC, etc) - these are expected during session transitions
+                        if (err.message?.includes('Bad MAC') || err.message?.includes('decrypt')) {
+                            break
+                        }
+                        
+                        // Rate limit errors - silence these too
+                        if (err.message?.includes('rate-overlimit') || err.data === 429) {
+                            break
+                        }
+                        
+                        // Retry on other errors
+                        if (retries < maxRetries - 1) {
+                            retries++
+                            await delay(100 * retries) // Exponential backoff
+                            continue
+                        }
+                        
+                        // Only log after all retries fail
+                        console.log(chalk.bgRed.black('  ⚠️  MSG ERROR  ⚠️  '), chalk.red(err.message))
+                        break
+                    }
+                }
             } catch (err) {
-                // Silently ignore decryption errors (Bad MAC, etc) - these are expected during session transitions
-                if (err.message?.includes('Bad MAC') || err.message?.includes('decrypt')) {
-                    return
+                // Outer try-catch for any unexpected errors
+                if (!err.message?.includes('Bad MAC') && !err.message?.includes('rate-overlimit')) {
+                    console.log(chalk.bgRed.black('  ⚠️  MSG ERROR  ⚠️  '), chalk.red(err.message))
                 }
-                
-                // Rate limit errors - silence these too
-                if (err.message?.includes('rate-overlimit') || err.data === 429) {
-                    return
-                }
-                
-                console.log(chalk.bgRed.black('  ⚠️  MSG ERROR  ⚠️  '), chalk.red(err.message))
             }
         })
 

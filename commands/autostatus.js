@@ -75,31 +75,34 @@ async function autoLike(sock, statusKey) {
         await new Promise(r => setTimeout(r, randomMs(300, 800)));
         
         // Correct reaction format for Baileys
-        const reaction = {
-            key: {
-                remoteJid: 'status@broadcast',
-                fromMe: false,
-                id: statusKey.id,
-                participant: statusKey.participant
-            },
-            text: emoji
+        const reactionKey = {
+            remoteJid: statusKey.participant || 'status@broadcast',
+            fromMe: false,
+            id: statusKey.id
         };
 
-        // Try primary method first
-        try {
-            await sock.sendMessage('status@broadcast', { react: reaction });
-            console.log(`❤️ [AutoStatus] Liked with ${emoji}`);
-        } catch (primaryErr) {
-            // Fallback: use relayMessage if sendMessage fails
-            const reactionMsg = {
-                reactionMessage: {
-                    key: reaction.key,
-                    text: emoji
-                }
-            };
-            await sock.relayMessage('status@broadcast', reactionMsg, { messageId: statusKey.id });
-            console.log(`❤️ [AutoStatus] Liked (relay) with ${emoji}`);
-        }
+        // Use the correct Baileys reaction format
+        await sock.sendMessage(statusKey.participant || 'status@broadcast', { 
+            react: { 
+                text: emoji, 
+                key: reactionKey 
+            }
+        }).catch(async (primaryErr) => {
+            // Fallback: try alternate format
+            try {
+                await sock.sendMessage('status@broadcast', { 
+                    react: { 
+                        text: emoji, 
+                        key: { id: statusKey.id, participant: statusKey.participant } 
+                    }
+                });
+            } catch (fallbackErr) {
+                console.debug(`[AutoLike] Failed both methods:`, fallbackErr.message);
+                throw fallbackErr;
+            }
+        });
+        
+        console.log(`❤️ [AutoStatus] Liked with ${emoji}`);
     } catch (err) {
         console.debug(`[AutoLike] Failed to react:`, err.message);
     }
