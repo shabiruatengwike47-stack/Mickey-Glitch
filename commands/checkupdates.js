@@ -56,12 +56,12 @@ function categorizeChanges(files) {
 // Create detailed update info message
 function formatUpdateInfo(res) {
     let message = '🔄 *UPDATE CHECK RESULT*\n\n';
-    
+
     if (!res || res.mode === 'none') {
         return '✅ *No updates available* — Your bot is up to date!';
     }
 
-    const updateType = res.mode === 'git' ? 'GIT' : 'ZIP';
+    const updateType = res.mode === 'git' ? 'GIT' : (res.mode === 'zip' ? 'ZIP' : res.mode);
     message += `📦 *Update Type:* ${updateType}\n`;
     const timeStr = new Date().toLocaleString('en-US', {
         timeZone: 'Africa/Dar_es_Salaam',
@@ -72,66 +72,68 @@ function formatUpdateInfo(res) {
     });
     message += `📅 *Time:* ${timeStr}\n\n`;
 
-    if (res.mode === 'git') {
-        const allFiles = res.files ? res.files.split('\n').map(f => f.trim()).filter(Boolean) : [];
-        const total = allFiles.length;
-        const categories = categorizeChanges(allFiles);
+    // Helper to pretty-list up to N items
+    function prettyList(arr, limit = 6) {
+        if (!arr || arr.length === 0) return '';
+        if (arr.length <= limit) return arr.join(', ');
+        return `${arr.slice(0, limit).join(', ')} +${arr.length - limit}`;
+    }
 
-        if (res.available) {
-            message += `🟢 *STATUS:* UPDATE AVAILABLE\n\n`;
-            message += `📊 *Changes Summary:*\n`;
-            message += `  • Total files: ${total}\n`;
-            
-            if (categories.commands.length > 0) {
-                message += `  • Commands: ${categories.commands.length} ${categories.commands.length > 3 ? `(${categories.commands.slice(0, 2).join(', ')} +${categories.commands.length - 2})` : `(${categories.commands.join(', ')})`}\n`;
-            }
-            if (categories.core.length > 0) {
-                message += `  • Core files: ${categories.core.length} (${categories.core.join(', ')})\n`;
-            }
-            if (categories.lib.length > 0) {
-                message += `  • Libraries: ${categories.lib.length}\n`;
-            }
-            if (categories.other.length > 0) {
-                message += `  • Other: ${categories.other.length}\n`;
-            }
-            message += `\n💡 *Use .update to install now*`;
-            
-            return message;
-        } else {
+    // Build detailed location report for given file array
+    function locationReport(files) {
+        const flat = files.map(f => f.trim()).filter(Boolean);
+        const categories = categorizeChanges(flat);
+        let out = '';
+        if (categories.commands.length) out += `• Commands (${categories.commands.length}): ${prettyList(categories.commands)}\n`;
+        if (categories.lib.length) out += `• Lib (${categories.lib.length}): ${prettyList(categories.lib)}\n`;
+        if (categories.core.length) out += `• Core (${categories.core.length}): ${prettyList(categories.core)}\n`;
+        if (categories.other.length) out += `• Other (${categories.other.length}): ${prettyList(categories.other)}\n`;
+        return out || '• No relevant changes detected\n';
+    }
+
+    if (res.mode === 'git') {
+        const raw = res.files || '';
+        const lines = raw.split('\n').map(l => l.trim()).filter(Boolean);
+        // Parse git status lines like: 'M\tpath/to/file'
+        const paths = lines.map(l => {
+            // split on whitespace / tab after status
+            const m = l.match(/^[A-Z]+\s+\t?(.+)$/i);
+            if (m && m[1]) return m[1].trim();
+            // Fallback: take last token
+            const parts = l.split(/\s+/);
+            return parts[parts.length - 1];
+        }).filter(Boolean);
+
+        if (!res.available || paths.length === 0) {
             return `✅ *No updates available* — All files are up to date`;
         }
+
+        message += `🟢 *STATUS:* UPDATE AVAILABLE\n\n`;
+        message += `📊 *Changes Summary:*\n`;
+        message += `  • Total files changed: ${paths.length}\n`;
+        message += locationReport(paths);
+        message += `\n💡 *Use .update to install now*`;
+        return message;
     }
 
     if (res.mode === 'zip') {
-        if (res.available) {
-            message += `🟢 *STATUS:* UPDATE AVAILABLE\n\n`;
-            const meta = res.remoteMeta;
-            message += `📁 *URL:* ${meta.url || 'Not available'}\n`;
+        if (!res.available) return `✅ *No updates available* — Your bot is up to date`;
 
-            if (res.changes) {
-                const { added = [], removed = [], modified = [] } = res.changes;
-                const all = [...added, ...removed, ...modified].map(f => f.trim()).filter(Boolean);
-                const total = all.length;
-                const categories = categorizeChanges(all);
+        message += `🟢 *STATUS:* UPDATE AVAILABLE\n\n`;
+        const meta = res.remoteMeta || {};
+        message += `📁 *URL:* ${meta.url || 'Not available'}\n`;
 
-                message += `\n📊 *Changes Summary:*\n`;
-                message += `  • Total files: ${total}\n`;
-                message += `  • Added: ${added.length}\n`;
-                message += `  • Modified: ${modified.length}\n`;
-                message += `  • Removed: ${removed.length}\n`;
-
-                if (categories.commands.length > 0) {
-                    message += `  • Commands affected: ${categories.commands.length}\n`;
-                }
-                if (categories.core.length > 0) {
-                    message += `  • Core changes: ${categories.core.length}\n`;
-                }
-            }
-            message += `\n💡 *Use .update to install now*`;
-            return message;
-        } else {
-            return `✅ *No updates available* — Your bot is up to date`;
+        if (res.changes) {
+            const { added = [], removed = [], modified = [] } = res.changes;
+            const all = [...added, ...removed, ...modified].map(f => f.trim()).filter(Boolean);
+            message += `\n📊 *Changes Summary:*\n`;
+            message += `  • Total files affected: ${all.length}\n`;
+            message += `  • Added: ${added.length}  • Modified: ${modified.length}  • Removed: ${removed.length}\n\n`;
+            message += locationReport(all);
         }
+
+        message += `\n💡 *Use .update to install now*`;
+        return message;
     }
 
     return message;
