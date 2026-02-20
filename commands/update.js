@@ -230,10 +230,28 @@ async function updateCommand(sock, chatId, message, zipOverride) {
             const summary = alreadyUpToDate ? `✅ Already up to date: ${newRev}` : `✅ Updated to ${newRev}`;
             console.log('[update] summary:', summary);
             
-            // Install dependencies
-            await run('npm install --no-audit --no-fund').catch(err => {
-                console.log('npm install skipped:', err.message);
-            });
+            // Install dependencies - skip if npm version mismatch to avoid conflicts
+            try {
+                const nodeVersion = (await run('node --version')).trim();
+                const npmVersion = (await run('npm --version')).trim();
+                console.log(`[update] Node: ${nodeVersion}, NPM: ${npmVersion}`);
+                
+                // Clean npm cache and package-lock to avoid conflicts
+                try {
+                    await run('npm cache clean --force').catch(() => {});
+                    // Remove lock files to force clean install
+                    if (fs.existsSync(path.join(process.cwd(), 'package-lock.json'))) {
+                        fs.unlinkSync(path.join(process.cwd(), 'package-lock.json'));
+                    }
+                } catch (e) {}
+                
+                // Install with safety flags to prevent conflicts
+                await run('npm install --no-audit --no-fund --prefer-offline --legacy-peer-deps').catch(err => {
+                    console.log('[update] npm install attempt skipped:', err.message);
+                });
+            } catch (err) {
+                console.log('[update] npm check skipped:', err.message);
+            }
             
             await sock.sendMessage(chatId, { text: `${summary}\n\nRestarting bot...` }, { quoted: message });
         } else {

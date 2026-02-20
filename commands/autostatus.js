@@ -87,8 +87,6 @@ async function autoLike(sock, statusKey) {
     const emoji = getRandomEmoji();
 
     try {
-        // Wait random time before reacting
-        await new Promise(r => setTimeout(r, randomDelay(300, 800)));
 
         const reactionKey = {
             remoteJid: statusKey.participant,

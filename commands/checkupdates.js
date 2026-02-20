@@ -174,9 +174,37 @@ async function checkUpdatesCommand(sock, chatId, message, args = []) {
         const res = await updateCommand.checkUpdates();
         const updateHash = res && res.files ? generateUpdateHash(res.files.split('\n'), res.mode) : null;
         
+        // Check for npm/node version conflicts
+        let npmWarning = '';
+        try {
+            const { exec } = require('child_process');
+            const nodeVersion = await new Promise((resolve, reject) => {
+                exec('node --version', (err, stdout) => {
+                    if (err) reject(err);
+                    else resolve(stdout.toString().trim());
+                });
+            });
+            const npmVersion = await new Promise((resolve, reject) => {
+                exec('npm --version', (err, stdout) => {
+                    if (err) reject(err);
+                    else resolve(stdout.toString().trim());
+                });
+            });
+            
+            // Check for version compatibility issues
+            const nodeNumeric = parseInt(nodeVersion.slice(1).split('.')[0]);
+            const npmNumeric = parseInt(npmVersion.split('.')[0]);
+            
+            if (nodeNumeric < 14 || npmNumeric < 6) {
+                npmWarning = '\n⚠️ *Warning:* Node/NPM version may be outdated\nUpdate manually with: node/npm official installer';
+            }
+        } catch (err) {
+            // Silently ignore version check errors
+        }
+        
         // Format and send update info
         const updateMsg = formatUpdateInfo(res);
-        await sock.sendMessage(chatId, { text: updateMsg }, { quoted: message });
+        await sock.sendMessage(chatId, { text: updateMsg + npmWarning }, { quoted: message });
 
         // Auto-reminder logic
         if (res && res.available) {

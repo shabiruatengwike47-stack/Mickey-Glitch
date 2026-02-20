@@ -227,9 +227,6 @@ async function handleStatusForward(sock, ev) {
         const m = ev.messages[0];
         if (m.key?.remoteJid !== 'status@broadcast' || !m.message) return;
 
-        // Wait random time before forwarding
-        await new Promise(r => setTimeout(r, randomDelay(cfg.forwardDelayMinMs, cfg.forwardDelayMaxMs)));
-
         // Forward with timeout
         const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 30000));
         await Promise.race([forwardStatus(sock, m), timeoutPromise]);
