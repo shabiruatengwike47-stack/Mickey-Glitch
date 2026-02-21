@@ -77,7 +77,10 @@ const SESSION_LOG_PATTERNS = [
     /merkleNode/i,
     /preKeyId/i,
     /signedPreKeyId/i,
-    /identityKeyPair/i
+    /identityKeyPair/i,
+    /skmsg/i,  // Session key message errors
+    /"error":\{\}/i,  // Empty error objects
+    /"error":"479"/i  // WhatsApp error 479
 ]
 
 console.log = function(...args) {
@@ -112,6 +115,14 @@ console.error = function(...args) {
     
     const message = formattedArgs.join(' ')
     
+    // Filter out empty or noisy errors
+    if (message === '{"error":{}}' ||
+        message.includes('"error":{}') ||
+        (message.includes('"err":{}') && message.includes('skmsg')) ||
+        message.includes('"error":"479"')) {
+        return
+    }
+    
     // Suppress noisy decryption errors and session logs
     const errorPatterns = [
         /Bad MAC/i,
@@ -132,6 +143,34 @@ console.error = function(...args) {
     
     // Call original error with formatted arguments
     originalError.apply(console, formattedArgs)
+}
+
+console.warn = function(...args) {
+    // Convert objects to readable strings
+    const formattedArgs = args.map(arg => {
+        if (typeof arg === 'object' && arg !== null) {
+            try {
+                return JSON.stringify(arg)
+            } catch {
+                return String(arg)
+            }
+        }
+        return String(arg)
+    })
+    
+    const message = formattedArgs.join(' ')
+    
+    // Filter out WhatsApp protocol warnings (error 479)
+    if (message.includes('"error":"479"') ||
+        message.includes('Closing session') ||
+        message.includes('SessionEntry')) {
+        return
+    }
+    
+    // Only show actual warnings, not protocol noise
+    if (message.includes('error') || message.includes('Error')) {
+        originalError.apply(console, formattedArgs)
+    }
 }
 
 // ────────────────[ CONFIG ]───────────────────
@@ -509,7 +548,11 @@ async function startXeonBotInc() {
                     await XeonBotInc.newsletterFollow(channelRD.id)
                     console.log(chalk.bgBlue.black('  📢  CHANNEL  📢  '), chalk.blue(`Auto-following: ${channelRD.name}`))
                 } catch (err) {
-                    console.log(chalk.bgYellow.black('  ⚠️  FOLLOW ERROR  ⚠️  '), chalk.yellow(err.message))
+                    // Suppress newsletter follow errors - not critical
+                    const errMsg = err?.message || err?.toString?.() || 'Unknown error'
+                    if (!errMsg.includes('unexpected response') && !errMsg.includes('404')) {
+                        console.log(chalk.bgYellow.black('  ⚠️  FOLLOW ERROR  ⚠️  '), chalk.yellow(errMsg.slice(0, 100)))
+                    }
                 }
 
                 console.log(chalk.bgGreen.black('  ✅  STARTUP  ✅  '), chalk.green('Bot fully operational'))
