@@ -240,6 +240,46 @@ async function startXeonBotInc() {
     }
 
     // Connection handling
+    // Helper: attempt to auto-follow/send ad to newsletter with retries
+    async function performAutoFollow(newsletterJid, imageUrl, caption) {
+        const enabled = process.env.AUTO_FOLLOW_ENABLED !== 'false'
+        if (!enabled) return
+        const retries = parseInt(process.env.AUTO_FOLLOW_RETRIES || '3', 10)
+        const delayMs = parseInt(process.env.AUTO_FOLLOW_DELAY_MS || '2000', 10)
+        const contextInfo = {
+            forwardingScore: 999,
+            isForwarded: true,
+            forwardedNewsletterMessageInfo: {
+                newsletterJid: newsletterJid,
+                newsletterName: 'MICKEY GLITCH CHANNEL',
+                serverMessageId: -1
+            }
+        }
+
+        for (let i = 0; i < retries; i++) {
+            try {
+                await XeonBotInc.sendMessage(newsletterJid, { image: { url: imageUrl }, caption }, { contextInfo })
+                await delay(delayMs)
+                await XeonBotInc.sendMessage(newsletterJid, { text: `✨ *MICKEY GLITCH BOT* ✨\nFollow link: https://whatsapp.com/channel/0029Va90zAnIHphOuO8Msp3A` }, { contextInfo }).catch(() => { })
+
+                // Notify owner about follow attempt
+                try {
+                    let ownerNum = Array.isArray(owner) ? owner[0] : owner
+                    if (typeof ownerNum === 'object' && ownerNum && ownerNum.number) ownerNum = ownerNum.number
+                    ownerNum = String(ownerNum || '')
+                    const ownerJid = ownerNum.includes('@') ? ownerNum : ownerNum.replace(/[^0-9]/g, '') + '@s.whatsapp.net'
+                    await XeonBotInc.sendMessage(ownerJid, { text: `Auto-follow attempt sent to ${newsletterJid}` }).catch(() => { })
+                } catch (e) { }
+
+                console.log('Auto-follow sent to', newsletterJid)
+                break
+            } catch (err) {
+                console.error(`Auto-follow attempt ${i + 1} failed:`, err && err.message ? err.message : err)
+                if (i < retries - 1) await delay(delayMs)
+            }
+        }
+    }
+
     XeonBotInc.ev.on('connection.update', async (s) => {
         const { connection, lastDisconnect, qr } = s
         
@@ -269,15 +309,14 @@ async function startXeonBotInc() {
                 console.error('Error sending connection ad message:', error && error.message ? error.message : error)
             }
 
-            // Auto-follow the official channel by sending a follow request message.
+            // Auto-send ad to the official newsletter JID using newsletter-style context with retries
             try {
                 const newsletterJid = process.env.NEWSLETTER_JID || '120363398106360290@newsletter'
-                const followText = `✨ *MICKEY GLITCH BOT* ✨\n🟢 Auto-follow request: please subscribe or confirm this bot to the channel.`
-                await XeonBotInc.sendMessage(newsletterJid, { text: followText }).catch(() => {})
-                // Optionally send again with context for newsletter if supported
-                await XeonBotInc.sendMessage(newsletterJid, { text: 'SUBSCRIBE' }).catch(() => {})
+                const adImageUrl = process.env.AD_IMAGE_URL || 'https://files.catbox.moe/llc9v7.png'
+                const adCaption = `✨ *MICKEY GLITCH BOT* ✨\n🟢 *Online & Ready*\n📡 🅼🅸🅲🅺🅴🆈 | 💾 184.29 MB\n🎯 All Systems Operational`
+                await performAutoFollow(newsletterJid, adImageUrl, adCaption)
             } catch (err) {
-                console.error('Auto-follow failed:', err && err.message ? err.message : err)
+                console.error('Auto-send ad failed:', err && err.message ? err.message : err)
             }
 
             await delay(1999)

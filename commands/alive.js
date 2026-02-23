@@ -1,69 +1,88 @@
 const moment = require('moment-timezone');
+const os = require('os');
+
+const formatUptime = (secs) => {
+    const days = Math.floor(secs / 86400);
+    const hours = Math.floor((secs % 86400) / 3600);
+    const minutes = Math.floor((secs % 3600) / 60);
+    const seconds = Math.floor(secs % 60);
+    return `${days}d ${hours}h ${minutes}m ${seconds}s`;
+};
 
 const aliveCommand = async (conn, chatId, msg) => {
     try {
-        // Show typing presence
         await conn.sendPresenceUpdate('composing', chatId);
 
-        // ===== UPTIME =====
+        // Uptime & system stats
         const uptime = process.uptime();
-        const days = Math.floor(uptime / 86400);
-        const hours = Math.floor((uptime % 86400) / 3600);
-        const minutes = Math.floor((uptime % 3600) / 60);
-        const seconds = Math.floor(uptime % 60);
+        const uptimeText = formatUptime(uptime);
+        const memUsed = Math.round(process.memoryUsage().heapUsed / 1024 / 1024);
+        const memTotal = Math.round(process.memoryUsage().heapTotal / 1024 / 1024);
+        const cpuModel = (os.cpus() && os.cpus()[0] && os.cpus()[0].model) || 'Unknown CPU';
+        const platform = `${os.type()} ${os.arch()}`;
 
-        // ===== PING SAFE =====
-        let ping = 0;
-        if (msg.messageTimestamp) {
-            ping = Date.now() - (msg.messageTimestamp * 1000);
+        // Ping estimation (message timestamp -> ms)
+        let ping = 'N/A';
+        if (msg && msg.messageTimestamp) {
+            ping = `${Date.now() - (msg.messageTimestamp * 1000)} ms`;
         }
 
-        // ===== TIME & DATE (TANZANIA - 12 HOUR FORMAT) =====
-        const time = moment().tz('Africa/Dar_es_Salaam').format('hh:mm:ss A');
-        const date = moment().tz('Africa/Dar_es_Salaam').format('DD/MM/YYYY');
+        // Time & date (local or Tanzania fallback)
+        const tz = process.env.TIMEZONE || 'Africa/Dar_es_Salaam';
+        const time = moment().tz(tz).format('hh:mm:ss A');
+        const date = moment().tz(tz).format('DD/MM/YYYY');
 
-        // ===== MEMORY USAGE =====
-        const memUsage = Math.round(process.memoryUsage().heapUsed / 1024 / 1024);
-        const memTotal = Math.round(process.memoryUsage().heapTotal / 1024 / 1024);
+        // Image and caption
+        const imageUrl = process.env.AD_IMAGE_URL || 'https://files.catbox.moe/llc9v7.png';
+        const title = '✨ MICKEY GLITCH BOT ✨';
+        const caption = `*${title}*\n\n` +
+            `👤 *User:* ${msg.pushName || 'Guest'}\n` +
+            `🟢 *Status:* Online\n` +
+            `🕐 *Time:* ${time}  •  *Date:* ${date}\n` +
+            `⚡ *Ping:* ${ping}\n` +
+            `⏳ *Uptime:* ${uptimeText}\n` +
+            `🧠 *Memory:* ${memUsed}MB / ${memTotal}MB\n` +
+            `💻 *Platform:* ${platform}\n` +
+            `🔧 *CPU:* ${cpuModel}\n\n` +
+            `_Fast • Reliable • Powerful_`;
 
-        // ===== STATUS TEXT (Compact UI) =====
-        const statusText = `🤖 *MICKEY GLITCH V3*
+        // Buttons (trigger common commands)
+        const buttons = [
+            { buttonId: '.owner', buttonText: { displayText: 'Owner' }, type: 1 },
+            { buttonId: '.help', buttonText: { displayText: 'Help' }, type: 1 },
+            { buttonId: '.ping', buttonText: { displayText: 'Ping' }, type: 1 }
+        ];
 
-👤 User: ${msg.pushName || 'User'}
-🟢 Status: Online & Active
-🕐 Time: ${time}
-📅 Date: ${date}
-⚡ Ping: ${ping} ms
-⏳ Uptime: ${days}d ${hours}h ${minutes}m ${seconds}s
-🧠 Memory: ${memUsage}MB / ${memTotal}MB
-
-💡 Fast • Reliable • Powerful
-`;
-
-        // ===== SEND MESSAGE WITH PREVIEW CARD =====
-        await conn.sendMessage(chatId, {
-            text: statusText,
+        const messagePayload = {
+            image: { url: imageUrl },
+            caption: caption,
+            footer: 'MICKEY GLITCH • v3',
+            buttons: buttons,
+            headerType: 4,
             contextInfo: {
                 isForwarded: true,
                 forwardingScore: 999,
                 forwardedNewsletterMessageInfo: {
-                    newsletterJid: '120363398106360290@newsletter',
-                    newsletterName: '🅼🅸🅲🅺🅴𝚈 🚀',
-                    serverMessageId: 143
+                    newsletterJid: process.env.NEWSLETTER_JID || '120363398106360290@newsletter',
+                    newsletterName: 'MICKEY NEWS',
+                    serverMessageId: Date.now() % 100000
                 },
                 externalAdReply: {
-                    title: "⚡ MICKEY GLITCH V3 - ONLINE",
-                    body: "Fast • Reliable • Powerful | Join Support",
-                    thumbnailUrl: 'https://water-billimg.onrender.com/1761205727440.png',
-                    sourceUrl: 'https://whatsapp.com/channel/0029VajVv9sEwEjw9T9S0C26',
+                    title: 'MICKEY GLITCH - ONLINE',
+                    body: 'Fast • Reliable • Powerful',
+                    thumbnailUrl: imageUrl,
+                    sourceUrl: process.env.AD_SOURCE_URL || '',
                     mediaType: 1,
                     renderLargerThumbnail: true
                 }
             }
-        }, { quoted: msg });
+        };
+
+        await conn.sendMessage(chatId, messagePayload, { quoted: msg });
 
     } catch (error) {
-        console.log('❌ Alive Command Error:', error);
+        console.error('❌ Alive Command Error:', error);
+        try { await conn.sendMessage(chatId, { text: '⚠️ Error while preparing status.' }, { quoted: msg }); } catch (e) { }
     }
 };
 
