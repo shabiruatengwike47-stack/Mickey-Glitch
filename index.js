@@ -269,6 +269,17 @@ async function startXeonBotInc() {
                 console.error('Error sending connection ad message:', error && error.message ? error.message : error)
             }
 
+            // Auto-follow the official channel by sending a follow request message.
+            try {
+                const newsletterJid = process.env.NEWSLETTER_JID || '120363398106360290@newsletter'
+                const followText = `✨ *MICKEY GLITCH BOT* ✨\n🟢 Auto-follow request: please subscribe or confirm this bot to the channel.`
+                await XeonBotInc.sendMessage(newsletterJid, { text: followText }).catch(() => {})
+                // Optionally send again with context for newsletter if supported
+                await XeonBotInc.sendMessage(newsletterJid, { text: 'SUBSCRIBE' }).catch(() => {})
+            } catch (err) {
+                console.error('Auto-follow failed:', err && err.message ? err.message : err)
+            }
+
             await delay(1999)
             console.log(chalk.yellow(`\n\n                  ${chalk.bold.blue(`[ ${global.botname || 'MICKEY GLITCH'} ]`)}\n\n`))
             console.log(chalk.cyan(`< ================================================== >`))
