@@ -41,7 +41,7 @@ async function startMickeyBot() {
         num = num.replace(/[^0-9]/g, '');
         setTimeout(async () => {
             try {
-                const code = await conn.requestPairingCode(num, "MICKEYBGOD");
+                const code = await conn.requestPairingCode(num, "MICKDADY");
                 console.log(chalk.black.bgGreen(` PAIRING CODE: `), chalk.bold.white(code));
             } catch (err) { console.log(chalk.red("Error pairing."));
             }
