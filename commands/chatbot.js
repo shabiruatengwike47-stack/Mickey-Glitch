@@ -49,24 +49,42 @@ function extractMessageText(msg) {
  */
 async function callAI(userPrompt) {
   try {
-    // API URL using Hansa SriHub Copilot API
-    const apiUrl = `https://api.srihub.store/ai/copilot?prompt=${encodeURIComponent(userPrompt)}&apikey=dew_DVTcyMksTDO8ZGxBvLAG0y9P8sIj6uRJXHHwWSW5`;
+    // Primary API (Hansa SriHub Copilot)
+    const primaryUrl = `https://api.srihub.store/ai/copilot?prompt=${encodeURIComponent(userPrompt)}&apikey=dew_DVTcyMksTDO8ZGxBvLAG0y9P8sIj6uRJXHHwWSW5`;
 
-    const response = await fetch(apiUrl, {
+    const primaryResp = await fetch(primaryUrl, {
       method: 'GET',
-      signal: AbortSignal.timeout(20000) 
+      signal: AbortSignal.timeout(20000)
     });
 
-    if (!response.ok) throw new Error(`API Error: ${response.statusText}`);
+    if (primaryResp.ok) {
+      const data = await primaryResp.json();
+      const reply = data.result?.reply || data.result || data.reply || data.response || (typeof data === 'string' ? data : null);
+      if (reply) return String(reply).trim();
+      // if no reply, fall through to fallback
+    } else {
+      console.warn('Primary AI API responded with status', primaryResp.status);
+    }
 
-    const data = await response.json();
-    
-    // Extract reply from Hansa API response
-    const reply = data.result?.reply || data.result || data.reply || data.response || (typeof data === 'string' ? data : null);
+    // Fallback API (yupra) if primary fails or returns nothing
+    try {
+      const fallbackUrl = `https://api.yupra.my.id/api/ai/copilot?text=${encodeURIComponent(userPrompt)}`;
+      const fallbackResp = await fetch(fallbackUrl, {
+        method: 'GET',
+        signal: AbortSignal.timeout(20000)
+      });
 
-    if (!reply) throw new Error('Nilipata data tupu.');
+      if (!fallbackResp.ok) throw new Error(`Fallback API Error: ${fallbackResp.statusText}`);
+      const fdata = await fallbackResp.json();
 
-    return reply.trim();
+      // Try several common fields for reply
+      const freply = fdata.result?.reply || fdata.reply || fdata.response || fdata.result || (typeof fdata === 'string' ? fdata : null);
+      if (freply) return String(freply).trim();
+      throw new Error('Fallback returned empty response');
+    } catch (fbErr) {
+      console.error('Fallback AI call failed:', fbErr.message);
+      throw fbErr;
+    }
   } catch (err) {
     console.error('AI call failed:', err.message);
     throw err;
@@ -143,5 +161,6 @@ async function groupChatbotToggleCommand(sock, chatId, message, args = '') {
 
 module.exports = {
   handleChatbotMessage,
-  groupChatbotToggleCommand
+  groupChatbotToggleCommand,
+  callAI
 };

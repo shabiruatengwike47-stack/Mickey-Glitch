@@ -1,32 +1,4 @@
-const fetch = require('node-fetch');
-
-/**
- * Call AI API with user prompt
- */
-async function callAI(userPrompt) {
-  try {
-    const apiUrl = `https://api.srihub.store/ai/copilot?prompt=${encodeURIComponent(userPrompt)}&apikey=dew_DVTcyMksTDO8ZGxBvLAG0y9P8sIj6uRJXHHwWSW5`;
-
-    const response = await fetch(apiUrl, {
-      method: 'GET',
-      signal: AbortSignal.timeout(20000) 
-    });
-
-    if (!response.ok) throw new Error(`API Error: ${response.statusText}`);
-
-    const data = await response.json();
-    
-    // Extract reply from AI API response
-    const reply = data.result?.reply || data.result || data.reply || data.response || (typeof data === 'string' ? data : null);
-
-    if (!reply) throw new Error('Nilipata data tupu.');
-
-    return reply.trim();
-  } catch (err) {
-    console.error('AI call failed:', err.message);
-    throw err;
-  }
-}
+const { callAI } = require('./chatbot');
 
 /**
  * AI Command Handler
@@ -56,7 +28,7 @@ async function aiCommand(sock, chatId, message) {
     });
 
     try {
-      // Call AI API
+      // Call AI API (uses primary + fallback from `commands/chatbot.js`)
       const reply = await callAI(userText);
 
       // Clean reply
