@@ -12,8 +12,8 @@ const chalk = require('chalk');
 const readline = require("readline");
 const { rmSync, existsSync } = require('fs');
 
-// HAKIKISHA HII PATH NI SAHIHI
-const { handleMessages } = require('./main'); 
+// Hakikisha faili hili lipo na lina function ya handleStatusUpdate
+const { handleMessages, handleStatusUpdate } = require('./main'); 
 
 const sessionPath = `./session`;
 const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
@@ -32,78 +32,58 @@ async function startMickeyBot() {
             creds: state.creds,
             keys: makeCacheableSignalKeyStore(state.keys, pino({ level: "fatal" })),
         },
-        // Maboresho ya spidi ya command
         generateHighQualityLinkPreview: true,
-        shouldSyncHistoryMessage: () => false,
-        getMessage: async (key) => { return { noCondition: true } }
+        syncFullHistory: false
     });
 
     // --- PAIRING CODE LOGIC ---
     if (!conn.authState.creds.registered) {
-        console.clear();
-        console.log(chalk.bold.cyan("╔════════════════════════════════════╗"));
-        console.log(chalk.bold.cyan("║     MICKEY GLITCH CUSTOM PAIR      ║"));
-        console.log(chalk.bold.cyan("╚════════════════════════════════════╝\n"));
-
-        let num = await question(chalk.yellow("Ingiza namba (Mfano: 255615944741): "));
+        let num = await question(chalk.yellow("\nIngiza namba (Mfano: 255615944741): "));
         num = num.replace(/[^0-9]/g, '');
-
-        await new Promise(resolve => setTimeout(resolve, 3000));
-        try {
-            const code = await conn.requestPairingCode(num, "MICKDADY");
-            console.log(chalk.black.bgGreen(` CODE YAKO: `), chalk.bold.white(code));
-        } catch (err) {
-            console.log(chalk.red("❌ Error kwenye kuomba code."));
-        }
+        setTimeout(async () => {
+            try {
+                const code = await conn.requestPairingCode(num, "MICKDADY");
+                console.log(chalk.black.bgGreen(` CODE YAKO: `), chalk.bold.white(code));
+            } catch (err) { console.log(chalk.red("Error pairing.")); }
+        }, 3000);
     }
 
     conn.ev.on('creds.update', saveCreds);
 
-    // --- CONNECTION HANDLER ---
+    // --- MESSAGE HANDLER & STATUS LISTENER ---
+    conn.ev.on('messages.upsert', async (chatUpdate) => {
+        try {
+            const mek = chatUpdate.messages[0];
+            if (!mek.message) return;
+
+            // 1. ANGALIA KAMA NI STATUS (Hii ndio sehemu uliyotaka)
+            if (mek.key && mek.key.remoteJid === 'status@broadcast') {
+                console.log(chalk.magenta(`[ NEW STATUS ] Meseji ya status imegundulika!`));
+                // Tunaita handleStatusUpdate kutoka main.js
+                await handleStatusUpdate(conn, chatUpdate);
+                return;
+            }
+
+            // 2. KAMA NI MESEJI YA KAWAIDA
+            await handleMessages(conn, chatUpdate);
+            
+        } catch (err) {
+            console.log(chalk.red("[ ERROR ] Upsert:"), err.message);
+        }
+    });
+
+    // --- CONNECTION UPDATES ---
     conn.ev.on('connection.update', async (update) => {
         const { connection, lastDisconnect } = update;
         if (connection === 'open') {
-            console.log(chalk.green.bold('\n[ SYSTEM ] Bot Imeunganishwa Kikamilifu!'));
-            
-            const botNum = jidNormalizedUser(conn.user.id);
-            await conn.sendMessage(botNum, {
-                text: `✨ *MICKEY GLITCH V3 ACTIVE* ✨`,
-                contextInfo: {
-                    externalAdReply: {
-                        title: 'MICKEY GLITCH ONLINE',
-                        body: 'Command Zote Zipo Tayari',
-                        thumbnailUrl: 'https://files.catbox.moe/llc9v7.png',
-                        sourceUrl: 'https://whatsapp.com/channel/0029Va90zAnIHphOuO8Msp3A',
-                        mediaType: 1,
-                        renderLargerThumbnail: true
-                    }
-                }
-            });
+            console.log(chalk.green.bold('\n✅ MICKEY GLITCH V3: ONLINE & STATUS READY'));
         }
-        
         if (connection === 'close') {
             let reason = lastDisconnect?.error?.output?.statusCode;
             if (reason === DisconnectReason.loggedOut) {
                 rmSync(sessionPath, { recursive: true, force: true });
                 process.exit(1);
             } else { startMickeyBot(); }
-        }
-    });
-
-    // --- MESSAGE HANDLER (HAPA NDIPO COMMAND ZINAPOKELEWA) ---
-    conn.ev.on('messages.upsert', async (chatUpdate) => {
-        try {
-            const mek = chatUpdate.messages[0];
-            if (!mek.message) return;
-            
-            // Log kwenye console ili uone meseji zinapoingia
-            console.log(chalk.blueBright(`[ MSG ] Meseji imeingia kutoka: ${mek.pushName || 'Mtumiaji'}`));
-
-            // HAKIKISHA handleMessages inaitwa vizuri
-            await handleMessages(conn, chatUpdate);
-            
-        } catch (err) {
-            console.log(chalk.red("[ ERROR ] Hitilafu kwenye messages.upsert:"), err);
         }
     });
 
