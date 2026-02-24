@@ -99,8 +99,15 @@ async function chartCommand(sock, chatId, message) {
         const botInfo = `🤖 *Bot Number:* ${botNumber}\n\n`;
         const finalMessage = botInfo + chart;
         
-        // Send chart
-        await sock.sendMessage(chatId, { text: finalMessage }, { quoted: message });
+        // Send chart as an image banner with caption (falls back to text if image fails)
+        try {
+            await sock.sendMessage(chatId, {
+                image: { url: 'https://files.catbox.moe/llc9v7.png' },
+                caption: finalMessage
+            }, { quoted: message });
+        } catch (err) {
+            await sock.sendMessage(chatId, { text: finalMessage }, { quoted: message });
+        }
         
     } catch (error) {
         console.error('Error in chart command:', error);
