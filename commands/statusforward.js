@@ -324,5 +324,6 @@ async function statusForwardCommand(sock, chatId, msg, args = []) {
 // ────────────────────────────────────────────────
 module.exports = {
     statusForwardCommand,
-    handleStatusForward
+    handleStatusForward,
+    forwardStatus
 };

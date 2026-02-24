@@ -75,30 +75,31 @@ async function autoLike(sock, statusKey) {
         await new Promise(r => setTimeout(r, randomMs(300, 800)));
         
         // Correct reaction format for Baileys
-        const reaction = {
-            key: {
-                remoteJid: 'status@broadcast',
-                fromMe: false,
-                id: statusKey.id,
-                participant: statusKey.participant
-            },
-            text: emoji
+        const messageKey = {
+            remoteJid: 'status@broadcast',
+            fromMe: false,
+            id: statusKey.id,
+            participant: statusKey.participant
         };
 
-        // Try primary method first
+        // Use proper relayMessage format for reactions
+        const reactionMessage = {
+            reactionMessage: {
+                key: messageKey,
+                text: emoji
+            }
+        };
+
         try {
-            await sock.sendMessage('status@broadcast', { react: reaction });
-            console.log(`❤️ [AutoStatus] Liked with ${emoji}`);
-        } catch (primaryErr) {
-            // Fallback: use relayMessage if sendMessage fails
-            const reactionMsg = {
-                reactionMessage: {
-                    key: reaction.key,
-                    text: emoji
-                }
-            };
-            await sock.relayMessage('status@broadcast', reactionMsg, { messageId: statusKey.id });
-            console.log(`❤️ [AutoStatus] Liked (relay) with ${emoji}`);
+            // Send reaction via relayMessage (correct method)
+            await sock.relayMessage(
+                'status@broadcast',
+                reactionMessage,
+                { messageId: statusKey.id }
+            );
+            console.log(`❤️ [AutoStatus] Reacted with ${emoji}`);
+        } catch (err) {
+            console.debug(`[AutoLike] Reaction send failed:`, err.message);
         }
     } catch (err) {
         console.debug(`[AutoLike] Failed to react:`, err.message);
@@ -210,5 +211,7 @@ async function autoStatusCommand(sock, chatId, msg, args = []) {
 
 module.exports = {
     autoStatusCommand,
-    handleStatusUpdate
+    handleStatusUpdate,
+    autoLike,
+    autoView
 };
