@@ -14,9 +14,10 @@ async function aiCommand(sock, chatId, message) {
     const userText = textBody.split(" ").slice(1).join(" ").trim();
 
     if (!userText) {
-      return sock.sendMessage(chatId, { 
+      await sock.sendMessage(chatId, { 
         text: '🤖 *AI Chat*\n\nMfano: *.ai hello*\n\nYaani:\n*.ai why is sky blue?*'
       }, { quoted: message });
+      return;
     }
 
     // Show typing
@@ -45,10 +46,10 @@ async function aiCommand(sock, chatId, message) {
       });
 
     } catch (apiError) {
-      console.error('API Error:', apiError.message);
+      console.error('API Error:', apiError.message || apiError);
       
       let errorMsg = '❌ Api error, jaribu tena baada ya dakika.';
-      if (apiError.message.includes('timeout')) {
+      if (apiError?.message?.includes('timeout')) {
         errorMsg = '⏱️ Timeout - jaribu swali rahisi zaidi.';
       }
       
@@ -58,7 +59,7 @@ async function aiCommand(sock, chatId, message) {
     }
 
   } catch (error) {
-    console.error('AI Command Error:', error);
+    console.error('AI Command Error:', error.message || error);
     await sock.sendMessage(chatId, { 
       text: '🚨 Hitilafu imetokea, jaribu tena.' 
     }, { quoted: message });
