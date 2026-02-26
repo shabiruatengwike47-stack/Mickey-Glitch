@@ -1,44 +1,38 @@
 const { downloadContentFromMessage } = require('@whiskeysockets/baileys');
-const settings = require('../settings');
 const fs = require('fs');
 const path = require('path');
 
-// Path to command usage data file
+// ────────────────────────────────────────────────
+// CONFIGURABLE CONSTANTS (change these as needed)
+const TARGET_MODE = 'owner';           // 'owner' or 'bot'
+const OWNER_PHONE = '255615944741';    // ← CHANGE TO YOUR REAL NUMBER (without + or 00)
+const NOTIFY_USER = false;             // true = send reply in the original chat, false = silent
+// ────────────────────────────────────────────────
+
+// Path to usage stats
 const commandStatsFile = path.join(__dirname, '../data/commandStats.json');
 
-/**
- * Load command usage statistics
- */
 function loadCommandStats() {
     try {
         if (fs.existsSync(commandStatsFile)) {
-            const data = fs.readFileSync(commandStatsFile, 'utf8');
-            return JSON.parse(data);
+            return JSON.parse(fs.readFileSync(commandStatsFile, 'utf8'));
         }
     } catch (error) {
-        console.error('Error loading command stats:', error);
+        console.error('[ViewOnce Stats] Load error:', error.message);
     }
     return { totalCommands: 0 };
 }
 
-/**
- * Save command usage statistics
- */
 function saveCommandStats(stats) {
     try {
         const dir = path.dirname(commandStatsFile);
-        if (!fs.existsSync(dir)) {
-            fs.mkdirSync(dir, { recursive: true });
-        }
+        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
         fs.writeFileSync(commandStatsFile, JSON.stringify(stats, null, 2), 'utf8');
     } catch (error) {
-        console.error('Error saving command stats:', error);
+        console.error('[ViewOnce Stats] Save error:', error.message);
     }
 }
 
-/**
- * Increment command usage counter
- */
 function incrementCommandUsage(commandName = 'viewonce') {
     const stats = loadCommandStats();
     stats[commandName] = (stats[commandName] || 0) + 1;
@@ -48,77 +42,118 @@ function incrementCommandUsage(commandName = 'viewonce') {
 
 /**
  * viewonceCommand
- * Downloads a quoted view-once image/video and forwards it to a configured target.
- * Tracks command usage automatically.
- * settings.viewOnceTarget: 'owner' | 'bot'  (default: 'owner')
- * settings.viewOnceNotify: boolean - whether to notify the original chat (default: false)
+ * Reply to view-once image/video/audio → bot downloads & forwards privately
+ * Command: .viewonce (or your prefix)
  */
 async function viewonceCommand(sock, chatId, message) {
     try {
-        // Track command usage
         incrementCommandUsage('viewonce');
-        
-        // Extract quoted imageMessage or videoMessage from the message structure
-        const quoted = message.message?.extendedTextMessage?.contextInfo?.quotedMessage;
-        const quotedImage = quoted?.imageMessage;
-        const quotedVideo = quoted?.videoMessage;
 
-        if (!quotedImage && !quotedVideo) {
-            // nothing quoted
-            if (settings.viewOnceNotify) {
-                await sock.sendMessage(chatId, { text: '❌ Please reply to a view-once image or video.' }, { quoted: message });
+        // Must be a reply
+        const quoted = message.message?.extendedTextMessage?.contextInfo?.quotedMessage;
+        if (!quoted) {
+            if (NOTIFY_USER) {
+                await sock.sendMessage(chatId, { text: '❌ Reply to a view-once media first.' }, { quoted: message });
             }
             return;
         }
 
-        // Determine target JID
-        const targetSetting = (settings.viewOnceTarget || 'owner').toString();
+        // Detect view-once media
+        let media = null;
+        let type = null;
+        let mime = null;
+
+        if (quoted.imageMessage?.viewOnce) {
+            media = quoted.imageMessage;
+            type = 'image';
+            mime = media.mimetype || 'image/jpeg';
+        } else if (quoted.videoMessage?.viewOnce) {
+            media = quoted.videoMessage;
+            type = 'video';
+            mime = media.mimetype || 'video/mp4';
+        } else if (quoted.audioMessage?.viewOnce) {
+            media = quoted.audioMessage;
+            type = 'audio';
+            mime = media.mimetype || 'audio/ogg; codecs=opus';
+        }
+
+        if (!media) {
+            if (NOTIFY_USER) {
+                await sock.sendMessage(chatId, { text: '❌ Not a view-once image, video or audio.' }, { quoted: message });
+            }
+            return;
+        }
+
+        // Determine private target JID
         let targetJid = null;
 
-        if (targetSetting === 'bot') {
-            // send to bot's own JID if available
-            targetJid = (sock && sock.user && sock.user.id) ? sock.user.id : null;
-            // fallback to settings.botNumber if provided
-            if (!targetJid && settings.botNumber) {
-                targetJid = settings.botNumber.includes('@') ? settings.botNumber : `${settings.botNumber}@s.whatsapp.net`;
-            }
-        } else {
-            // default: owner
-            if (settings.ownerNumber) {
-                targetJid = settings.ownerNumber.includes('@') ? settings.ownerNumber : `${settings.ownerNumber}@s.whatsapp.net`;
-            }
+        if (TARGET_MODE === 'bot' && sock?.user?.id) {
+            targetJid = sock.user.id;
+        } else if (OWNER_PHONE) {
+            targetJid = `${OWNER_PHONE}@s.whatsapp.net`;
         }
 
         if (!targetJid) {
-            // No target configured; optionally notify and exit
-            if (settings.viewOnceNotify) {
-                await sock.sendMessage(chatId, { text: '❌ No target configured to receive view-once media. Please set `ownerNumber` or `botNumber` in settings.' }, { quoted: message });
+            console.error('[ViewOnce] No target JID configured');
+            if (NOTIFY_USER) {
+                await sock.sendMessage(chatId, { text: '❌ Target not set in code (owner phone missing).' }, { quoted: message });
             }
             return;
         }
 
-        if (quotedImage && quotedImage.viewOnce) {
-            const stream = await downloadContentFromMessage(quotedImage, 'image');
-            let buffer = Buffer.from([]);
-            for await (const chunk of stream) buffer = Buffer.concat([buffer, chunk]);
-            await sock.sendMessage(targetJid, { image: buffer, fileName: 'viewonce.jpg', caption: quotedImage.caption || '' });
-        } else if (quotedVideo && quotedVideo.viewOnce) {
-            const stream = await downloadContentFromMessage(quotedVideo, 'video');
-            let buffer = Buffer.from([]);
-            for await (const chunk of stream) buffer = Buffer.concat([buffer, chunk]);
-            await sock.sendMessage(targetJid, { video: buffer, fileName: 'viewonce.mp4', caption: quotedVideo.caption || '' });
+        // Download
+        const stream = await downloadContentFromMessage(media, type);
+        let buffer = Buffer.from([]);
+        for await (const chunk of stream) {
+            buffer = Buffer.concat([buffer, chunk]);
         }
 
-        // Optionally notify the original chat
-        if (settings.viewOnceNotify) {
-            await sock.sendMessage(chatId, { text: `✅ View-once media forwarded to ${targetSetting}.` }, { quoted: message });
+        if (buffer.length === 0) throw new Error('Empty buffer downloaded');
+
+        // Prepare caption
+        const caption = media.caption ? `Original: ${media.caption}` : `Forwarded view-once ${type}`;
+
+        // Send privately
+        let sent;
+        if (type === 'image') {
+            sent = await sock.sendMessage(targetJid, {
+                image: buffer,
+                mimetype: mime,
+                caption,
+                fileName: `viewonce_${Date.now()}.jpg`
+            });
+        } else if (type === 'video') {
+            sent = await sock.sendMessage(targetJid, {
+                video: buffer,
+                mimetype: mime,
+                caption,
+                fileName: `viewonce_${Date.now()}.mp4`
+            });
+        } else if (type === 'audio') {
+            sent = await sock.sendMessage(targetJid, {
+                audio: buffer,
+                mimetype: mime,
+                ptt: media.ptt || false,
+                caption,
+                fileName: `viewonce_${Date.now()}.ogg`
+            });
         }
-    } catch (e) {
-        console.error('viewonceCommand error:', e && e.message ? e.message : e);
-        if (settings.viewOnceNotify) {
+
+        // Optional notification (silent by default)
+        if (NOTIFY_USER) {
+            await sock.sendMessage(chatId, {
+                text: `✅ View-once ${type} forwarded privately.`
+            }, { quoted: message });
+        }
+
+        console.log(`[ViewOnce] Forwarded ${type} to ${targetJid}`);
+
+    } catch (error) {
+        console.error('[ViewOnce] Error:', error.message || error);
+        if (NOTIFY_USER) {
             try {
-                await sock.sendMessage(chatId, { text: '❌ Failed to forward view-once media.' }, { quoted: message });
-            } catch (err) {}
+                await sock.sendMessage(chatId, { text: '❌ Failed to process view-once media.' }, { quoted: message });
+            } catch {}
         }
     }
 }
