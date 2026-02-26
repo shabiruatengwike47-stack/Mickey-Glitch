@@ -97,9 +97,7 @@ async function startBot(reconnectAttempts = 0) {
 Let's grow your business! 🔥\n_Powered by Mickey Glitch_`;
 
                         await sock.sendMessage(me, {
-                            image: { url: imageUrl },
-                            caption,
-                            viewOnce: true,
+                            text: caption,
                             contextInfo: {
                                 forwardingScore: 999,
                                 isForwarded: true,
