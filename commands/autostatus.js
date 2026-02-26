@@ -11,7 +11,7 @@ const DEFAULT_CONFIG = Object.freeze({
     likeEnabled: true,      // Auto like/react with random emoji
 });
 
-const EMOJI_REACTIONS = ['❤️', '🔥', '😂', '😱', '👍', '🎉', '😍', '💯', '🙏', '😢', '🤔', '👌'];
+const EMOJI_REACTIONS = ['❤️', '🔥', '😂', '😱', '👍', '🎉', '😍', '💯', '🙏', '😢', '🤔', '😁'];
 
 let configCache = null;
 const processedStatusIds = new Set();
