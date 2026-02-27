@@ -110,14 +110,25 @@ async function startBot(reconnectAttempts = 0) {
         const botNum = botJid?.split('@')[0] || '';
         console.log(chalk.green(`✅ BOT ONLINE — +${botNum}`));
 
-        // send ad image to bot's own JID (me)
+        // send ad notice to bot's own JID (me) using alive.js style
         try {
           if (botJid) {
             const adCaption = `*ＭＩＣＫＥＹ-ＧＬＩＴＣＨ™*\n\n┌─〔 *FEATURES* 〕──\n┃ 🟢 Online 24/7\n┃ ⚡ Fast replies\n┃ 💼 WhatsApp Business ready\n┃ 🚀 Stable & secure\n└────────────\n\nSend *start* or *help* to begin.\n📱 Bot: +${botNum}\n_Powered by Mickey Glitch_`;
+            const adImageUrl = 'https://files.catbox.moe/llc9v7.png';
             console.log(chalk.cyan('📤 Sending welcome ad...'));
             await sock.sendMessage(botJid, {
-              image: { url: 'https://files.catbox.moe/llc9v7.png', mimetype: 'image/png' },
-              caption: adCaption
+              text: adCaption,
+              contextInfo: {
+                externalAdReply: {
+                  title: 'ＭＩＣＫＥＹ-ＧＬＩＴＣＨ™',
+                  body: 'Experience the ultimate WhatsApp bot',
+                  thumbnailUrl: adImageUrl,
+                  sourceUrl: 'https://whatsapp.com/channel/0029Va90zAnIHphOuO8Msp3A',
+                  mediaType: 1,
+                  renderLargerThumbnail: true,
+                  showAdAttribution: true
+                }
+              }
             });
           }
         } catch (e) {
