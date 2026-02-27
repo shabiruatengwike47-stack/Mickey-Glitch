@@ -1,119 +1,109 @@
 const { sleep } = require('../lib/myfunc');
 
+// -- new version inserted below --
+
+// common contextInfo block used for all outgoing messages
+const BASE_CONTEXT = {
+    forwardingScore: 1,
+    isForwarded: true,
+    forwardedNewsletterMessageInfo: {
+        newsletterJid: '120363418027651738@newsletter',
+        newsletterName: 'TKT-CYBER-XMD',
+        serverMessageId: -1
+    }
+};
+
 async function pairCommand(sock, chatId, message, q) {
     try {
-        if (!q) {
-            return await sock.sendMessage(chatId, {
-                text: "╭━━━━━━━━━━━━━━━━━━┈⊷\n┃●│➣ *📱 PAIRING COMMAND*\n╰━━━━━━━━━━━━━━━━━━┈⊷\n\n*Usage:* `.pair <number>`\n*Example:* `.pair 2347030626048`\n*Multiple:* `.pair 26370xxxx, 26381xxxx`\n\n*Note:* Enter numbers without + or spaces",
-                contextInfo: {
-                    forwardingScore: 1,
-                    isForwarded: true,
-                    forwardedNewsletterMessageInfo: {
-                        newsletterJid: '120363418027651738@newsletter',
-                        newsletterName: 'TKT-CYBER-XMD',
-                        serverMessageId: -1
-                    }
-                }
-            });
-        }
+        if (!q) return sendUsage(sock, chatId);
 
-        const numbers = q.split(',')
-            .map((v) => v.trim().replace(/[^0-9]/g, ''))
-            .filter((v) => v.length >= 10 && v.length <= 15);
+        const numbers = parseNumbers(q);
+        if (numbers.length === 0) return sendInvalidFormat(sock, chatId);
 
-        if (numbers.length === 0) {
-            return await sock.sendMessage(chatId, {
-                text: "╭━━━━━━━━━━━━━━━━━━┈⊷\n┃✮│➣ *❌ INVALID FORMAT*\n╰━━━━━━━━━━━━━━━━━━┈⊷\n\nPlease use correct format:\n`.pair 2347030626048`\n`.pair 26370xxxx, 26381xxxx`",
-                contextInfo: {
-                    forwardingScore: 1,
-                    isForwarded: true,
-                    forwardedNewsletterMessageInfo: {
-                        newsletterJid: '120363418027651738@newsletter',
-                        newsletterName: 'TKT-CYBER-XMD',
-                        serverMessageId: -1
-                    }
-                }
-            });
-        }
+        await sock.sendMessage(chatId, { text: processingText(), contextInfo: BASE_CONTEXT });
 
-        await sock.sendMessage(chatId, {
-            text: "╭━━━━━━━━━━━━━━━━━━┈⊷\n┃✮│➣ *⏳ PROCESSING*\n╰━━━━━━━━━━━━━━━━━━┈⊷\n\nGenerating pairing codes...",
-            contextInfo: {
-                forwardingScore: 1,
-                isForwarded: true,
-                forwardedNewsletterMessageInfo: {
-                    newsletterJid: '120363418027651738@newsletter',
-                    newsletterName: 'TKT-CYBER-XMD',
-                    serverMessageId: -1
-                }
-            }
-        });
+        const results = [];
 
-        let results = [];
-        
-        for (const number of numbers) {
+        for (const raw of numbers) {
+            const number = raw;
             try {
-                // Use index.js pairing formula with country code handling
-                let phone = number;
-                if (!phone.startsWith('255')) phone = '255' + phone;
-
-                console.log(`⏳ Processing: +${phone}`);
+                const phone = normalizeNumber(number);
+                console.log(`⏳ Processing pairing for +${phone}`);
                 await sleep(2000);
 
                 const code = await sock.requestPairingCode(phone);
-                const formattedCode = code.match(/.{1,4}/g)?.join(' - ') || code;
-                results.push(`✅ ${number}: ${formattedCode}`);
-                
+                const formatted = formatCode(code);
+
+                results.push(`✅ ${number}: ${formatted}`);
+
                 await sock.sendMessage(chatId, {
-                    text: `╭━━━━━━━━━━━━━━━━━━┈⊷\n┃✮│➣ *✅ PAIRING CODE*\n╰━━━━━━━━━━━━━━━━━━┈⊷\n\n📱 *Number:* ${number}\n🔑 *Code:* \`${formattedCode}\`\n\n*How to use:*\n1. Open WhatsApp → Linked Devices\n2. Tap "Link a Device"\n3. Enter code: *${formattedCode}*\n⏰ Code expires in 30 seconds!`,
-                    contextInfo: {
-                        forwardingScore: 1,
-                        isForwarded: true,
-                        forwardedNewsletterMessageInfo: {
-                            newsletterJid: '120363418027651738@newsletter',
-                            newsletterName: 'TKT-CYBER-XMD',
-                            serverMessageId: -1
-                        }
-                    }
+                    text: pairingMessage(number, formatted),
+                    contextInfo: BASE_CONTEXT
                 });
-            } catch (pairError) {
-                console.error('Pairing Error:', pairError);
-                results.push(`❌ ${number}: Failed to generate pairing code - ${pairError.message}`);
+            } catch (err) {
+                console.error('Pairing Error:', err);
+                results.push(`❌ ${number}: ${err.message}`);
             }
         }
 
-        // Send summary
-        if (results.length > 0) {
-            const summary = `╭━━━━━━━━━━━━━━━━━━┈⊷\n┃✮│➣ *📊 PAIRING SUMMARY*\n╰━━━━━━━━━━━━━━━━━━┈⊷\n\n${results.join('\n')}\n\n*✅ Process completed!*`;
+        if (results.length) {
             await sock.sendMessage(chatId, {
-                text: summary,
+                text: summaryText(results),
                 contextInfo: {
-                    forwardingScore: 1,
-                    isForwarded: true,
+                    ...BASE_CONTEXT,
                     forwardedNewsletterMessageInfo: {
-                        newsletterJid: '120363418027651738@newsletter',
-                        newsletterName: 'TKT-CYBER-TEC',
-                        serverMessageId: -1
+                        ...BASE_CONTEXT.forwardedNewsletterMessageInfo,
+                        newsletterName: 'TKT-CYBER-TEC'
                     }
                 }
             });
         }
-
     } catch (error) {
-        console.error(error);
-        await sock.sendMessage(chatId, {
-            text: "╭━━━━━━━━━━━━━━━━━━┈⊷\n┃✮│➣ *❌ SYSTEM ERROR*\n╰━━━━━━━━━━━━━━━━━━┈⊷\n\nAn error occurred. Please try again later.",
-            contextInfo: {
-                forwardingScore: 1,
-                isForwarded: true,
-                forwardedNewsletterMessageInfo: {
-                    newsletterJid: '120363418027651738@newsletter',
-                    newsletterName: 'TKT_TECH',
-                    serverMessageId: -1
-                }
-            }
-        });
+        console.error('pairCommand error:', error);
+        await sock.sendMessage(chatId, { text: systemErrorText(), contextInfo: BASE_CONTEXT });
     }
+}
+
+// helpers
+function parseNumbers(input) {
+    return input
+        .split(',')
+        .map(v => v.trim().replace(/[^0-9]/g, ''))
+        .filter(v => v.length >= 10 && v.length <= 15);
+}
+
+function normalizeNumber(num) {
+    return num.startsWith('255') ? num : '255' + num;
+}
+
+function formatCode(code) {
+    return code.match(/.{1,4}/g)?.join(' - ') || code;
+}
+
+function sendUsage(sock, chatId) {
+    const text = `╭━━━━━━━━━━━━━━━━━━┈⊷\n┃●│➣ *📱 PAIRING COMMAND*\n╰━━━━━━━━━━━━━━━━━━┈⊷\n\n*Usage:* \\.pair <number>\n*Example:* \\.pair 2347030626048\n*Multiple:* \\.pair 26370xxxx, 26381xxxx\n\n*Note:* Enter numbers without + or spaces`;
+    return sock.sendMessage(chatId, { text, contextInfo: BASE_CONTEXT });
+}
+
+function sendInvalidFormat(sock, chatId) {
+    const text = `╭━━━━━━━━━━━━━━━━━━┈⊷\n┃✮│➣ *❌ INVALID FORMAT*\n╰━━━━━━━━━━━━━━━━━━┈⊷\n\nPlease use correct format:\n\\.pair 2347030626048\n\\.pair 26370xxxx, 26381xxxx`;
+    return sock.sendMessage(chatId, { text, contextInfo: BASE_CONTEXT });
+}
+
+function processingText() {
+    return `╭━━━━━━━━━━━━━━━━━━┈⊷\n┃✮│➣ *⏳ PROCESSING*\n╰━━━━━━━━━━━━━━━━━━┈⊷\n\nGenerating pairing codes...`;
+}
+
+function pairingMessage(number, code) {
+    return `╭━━━━━━━━━━━━━━━━━━┈⊷\n┃✮│➣ *✅ PAIRING CODE*\n╰━━━━━━━━━━━━━━━━━━┈⊷\n\n📱 *Number:* ${number}\n🔑 *Code:* \`${code}\`\n\n*How to use:*\n1. Open WhatsApp → Linked Devices\n2. Tap "Link a Device"\n3. Enter code: *${code}*\n⏰ Code expires in 30 seconds!`;
+}
+
+function summaryText(results) {
+    return `╭━━━━━━━━━━━━━━━━━━┈⊷\n┃✮│➣ *📊 PAIRING SUMMARY*\n╰━━━━━━━━━━━━━━━━━━┈⊷\n\n${results.join('\n')}\n\n*✅ Process completed!*`;
+}
+
+function systemErrorText() {
+    return `╭━━━━━━━━━━━━━━━━━━┈⊷\n┃✮│➣ *❌ SYSTEM ERROR*\n╰━━━━━━━━━━━━━━━━━━┈⊷\n\nAn error occurred. Please try again later.`;
 }
 
 module.exports = pairCommand;
