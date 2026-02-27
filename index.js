@@ -3,7 +3,7 @@
  * Clean, consolidated connection handler and ad send
  */
 
-require('./settings');
+const settings = require('./settings');
 
 const {
   default: makeWASocket,
