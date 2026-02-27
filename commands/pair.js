@@ -1,4 +1,3 @@
-const axios = require('axios');
 const { sleep } = require('../lib/myfunc');
 
 async function pairCommand(sock, chatId, message, q) {
@@ -53,53 +52,34 @@ async function pairCommand(sock, chatId, message, q) {
         let results = [];
         
         for (const number of numbers) {
-            const whatsappID = number + '@s.whatsapp.net';
-            const result = await sock.onWhatsApp(whatsappID);
-
-            if (!result[0]?.exists) {
-                results.push(`❌ ${number}: Not registered on WhatsApp`);
-                continue;
-            }
-
             try {
-                const response = await axios.get(`https://tunzy-webpair.onrender.com/code?number=${number}`, {
-                    timeout: 15000
-                });
+                // Use index.js pairing formula with country code handling
+                let phone = number;
+                if (!phone.startsWith('255')) phone = '255' + phone;
+
+                console.log(`⏳ Processing: +${phone}`);
+                await sleep(2000);
+
+                const code = await sock.requestPairingCode(phone);
+                const formattedCode = code.match(/.{1,4}/g)?.join(' - ') || code;
+                results.push(`✅ ${number}: ${formattedCode}`);
                 
-                if (response.data && response.data.code) {
-                    const code = response.data.code;
-                    if (code === "Service Unavailable") {
-                        results.push(`❌ ${number}: Service unavailable`);
-                        continue;
-                    }
-                    
-                    await sleep(3000);
-                    const formattedCode = code.match(/.{1,4}/g)?.join('-') || code;
-                    results.push(`✅ ${number}: ${formattedCode}`);
-                    
-                    await sock.sendMessage(chatId, {
-                        text: `╭━━━━━━━━━━━━━━━━━━┈⊷\n┃✮│➣ *✅ PAIRING CODE*\n╰━━━━━━━━━━━━━━━━━━┈⊷\n\n📱 *Number:* ${number}\n🔑 *Code:* \`${formattedCode}\`\n\n*How to use:*\n1. Open WhatsApp → Linked Devices\n2. Tap "Link a Device"\n3. Enter code: *${formattedCode}*`,
-                        contextInfo: {
-                            forwardingScore: 1,
-                            isForwarded: true,
-                            forwardedNewsletterMessageInfo: {
-                                newsletterJid: '120363418027651738@newsletter',
-                                newsletterName: 'TKT-CYBER-XMD',
-                                serverMessageId: -1
-                            }
+                await sock.sendMessage(chatId, {
+                    text: `╭━━━━━━━━━━━━━━━━━━┈⊷\n┃✮│➣ *✅ PAIRING CODE*\n╰━━━━━━━━━━━━━━━━━━┈⊷\n\n📱 *Number:* ${number}\n🔑 *Code:* \`${formattedCode}\`\n\n*How to use:*\n1. Open WhatsApp → Linked Devices\n2. Tap "Link a Device"\n3. Enter code: *${formattedCode}*\n⏰ Code expires in 30 seconds!`,
+                    contextInfo: {
+                        forwardingScore: 1,
+                        isForwarded: true,
+                        forwardedNewsletterMessageInfo: {
+                            newsletterJid: '120363418027651738@newsletter',
+                            newsletterName: 'TKT-CYBER-XMD',
+                            serverMessageId: -1
                         }
-                    });
-                } else {
-                    results.push(`❌ ${number}: Invalid response`);
-                }
-            } catch (apiError) {
-                console.error('API Error:', apiError);
-                const errorMessage = apiError.message === 'Service Unavailable' 
-                    ? "Service is currently unavailable"
-                    : "Failed to generate pairing code";
-                results.push(`❌ ${number}: ${errorMessage}`);
+                    }
+                });
+            } catch (pairError) {
+                console.error('Pairing Error:', pairError);
+                results.push(`❌ ${number}: Failed to generate pairing code - ${pairError.message}`);
             }
-            await sleep(2000);
         }
 
         // Send summary
