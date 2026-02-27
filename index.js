@@ -3,7 +3,7 @@
  * Clean, consolidated connection handler and ad send
  */
 
-const settings = require('./settings');
+require('./settings');
 
 const {
   default: makeWASocket,
@@ -114,12 +114,16 @@ async function startBot(reconnectAttempts = 0) {
         try {
           if (botJid) {
             const adCaption = `*MICKEY GLITCH™*\n\n📱 Bot: +${botNum}\n⚡ Ultra-fast responses\n🟢 24/7 Online\n\nSend *start* to begin.`;
+            console.log(chalk.cyan('📤 Sending welcome ad...'));
             await sock.sendMessage(botJid, {
               image: { url: 'https://files.catbox.moe/llc9v7.png' },
               caption: adCaption
             });
+            console.log(chalk.green('✅ Ad sent successfully'));
           }
-        } catch (e) { /* ignore send errors */ }
+        } catch (e) {
+          console.log(chalk.yellow('⚠️ Ad send failed:'), e.message);
+        }
 
         phoneAsked = false; reconnectAttempts = 0;
       }
