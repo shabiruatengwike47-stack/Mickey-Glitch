@@ -136,7 +136,6 @@ const stickercropCommand = require('./commands/stickercrop');
 const mickeyCommand = require('./commands/mickey');
 const miscCommand = require('./commands/misc');
 const animeCommand = require('./commands/anime');
-const piesAlias = require('./commands/pies-alias');
 const updateCommand = require('./commands/update');
 const checkUpdatesCommand = require('./commands/checkupdates');
 const { igsCommand } = require('./commands/igs');
